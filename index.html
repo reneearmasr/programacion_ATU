@@ -252,6 +252,11 @@ table.g td.det{white-space:normal;min-width:130px;max-width:220px}
 .ax-firma{width:320px;text-align:center;border-top:1px solid #333;padding-top:4px;font-weight:700;font-size:9.5px}
 .ax-firma span{font-weight:400}
 #printArea{display:none}
+.topbar{position:fixed;left:0;right:0;top:0;height:3px;z-index:60;background:linear-gradient(90deg,transparent,var(--gold,#C9A227),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:tb 1s linear infinite}
+@keyframes tb{from{background-position:-40% 0}to{background-position:140% 0}}
+.loading{background:rgba(11,42,74,.06)}
+@media (prefers-reduced-motion:reduce){.topbar{animation:none;background:var(--gold,#C9A227)}}
+.btn-ref{margin-left:auto}
 
 /* ============ Apariencia v4 ============ */
 :root{ --radius:12px; --radius-sm:8px; --navy3:#0E3B63; --gold:#C9A227;
@@ -375,6 +380,7 @@ tfoot td,tfoot td.lin{background:var(--surface2)}
 
 <main class="wrap" id="app"></main>
 <div class="loading" id="loading" hidden><span>Cargando…</span></div>
+<div class="topbar" id="topbar" hidden></div>
 <div class="toast" id="toast" hidden></div>
 <div id="printArea"></div>
 
@@ -405,7 +411,15 @@ const fmt2 = v => (+v || 0).toLocaleString('es-PE', {minimumFractionDigits:0, ma
 const fmtM = v => { v = +v || 0; const a = Math.abs(v); return a >= 1e6 ? (v/1e6).toLocaleString('es-PE',{maximumFractionDigits:2}) + ' M' : fmt(v); };
 const parse = s => { s = String(s || '').replace(/\s|S\/\.?/g,'').replace(/,/g,''); const v = parseFloat(s); return isFinite(v) ? v : 0; };
 function toast(t){ const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => el.hidden = true, 3200); }
-function busy(on){ $('#loading').hidden = !on; }
+let busyN = 0, busyT = null;
+function busy(on){
+  busyN = Math.max(0, busyN + (on ? 1 : -1));
+  const activo = busyN > 0;
+  $('#topbar').hidden = !activo;
+  clearTimeout(busyT);
+  if (activo) busyT = setTimeout(() => { if (busyN > 0) $('#loading').hidden = false; }, 700);
+  else $('#loading').hidden = true;
+}
 async function run(fn, ...args){
   busy(true);
   try { return await call(fn, S.token, ...args); }
@@ -447,7 +461,8 @@ function pintarLogin(msg){
       Object.assign(S, { token:r.token, sesion:r.sesion, config:r.config, unidades:r.unidades });
       S.ver = r.sesion.rol === 'OPP' ? 'bandeja' : 'form';
       pintarCabecera();
-      if (S.ver === 'bandeja') await abrirOPP(); else await abrirUO(S.unidades[0] && S.unidades[0].uo);
+      if (S.ver === 'bandeja'){ if (r.resumen){ S.opp.unidades = r.resumen.unidades; S.opp.envios = r.resumen.envios; pintarOPP(); } else await abrirOPP(); }
+      else await abrirUO(S.unidades[0] && S.unidades[0].uo, r.inicial);
     } catch(e){ pintarLogin((e && e.message) || 'No se pudo ingresar.'); }
     finally { busy(false); }
   });
@@ -529,9 +544,9 @@ const abrev = f => ({'Recursos ordinarios':'RO','Recursos directamente recaudado
 const pad4 = n => String(n).padStart(4, '0');
 
 /* ===================== Vista de área: formulario ===================== */
-async function abrirUO(uo){
+async function abrirUO(uo, pre){
   if (!uo){ $('#app').innerHTML = '<div class="empty">Tu usuario no tiene unidades asignadas. Pide a OPP que revise la hoja Usuarios.</div>'; return; }
-  const r = await run('api_cargarUO', uo);
+  const r = pre || await run('api_cargarUO', uo);
   cargarRespuesta(uo, r);
   S.filtro.ge = ''; S.filtro.q = ''; S.filtro.sf = ''; S.agregando = null; S.marcar = false; S.colapsados = {};
   S.ver = 'form';
@@ -887,7 +902,7 @@ async function guardar(enviar){
   box.hidden = true;
   try {
     const r = await run('api_guardar', S.uo, cambios, S.justGeneral, enviar);
-    cargarRespuesta(S.uo, r); S.marcar = false; S.agregando = null;
+    cargarRespuesta(S.uo, r); S.marcar = false; S.agregando = null; S.opp.unidades = null;
     pintar();
     toast(enviar ? 'Pedido enviado a OPP.' : 'Borrador guardado.');
   } catch(e){ box.hidden = false; box.innerHTML = `<ul class="errs">${String((e && e.message) || e).split('\n').map(x => `<li>${esc(x)}</li>`).join('')}</ul>`; }
@@ -904,13 +919,14 @@ function bindTabs(){
   document.querySelectorAll('.tab').forEach(b => b.onclick = async () => {
     const v = b.dataset.v;
     if (v === 'form'){ await abrirUO(S.uo || S.unidades[0].uo); return; }
-    if (v === 'notasopp'){ await abrirNotasOPP(); return; }
-    S.ver = v; await abrirOPP();
+    if (v === 'notasopp'){ if (S.opp.notasOk) { S.ver = 'notasopp'; pintarOPP(); } else await abrirNotasOPP(); return; }
+    S.ver = v;
+    if (S.opp.unidades) pintarOPP(); else await abrirOPP();
   });
 }
 async function abrirOPP(){
   const r = await run('api_resumenOPP');
-  S.opp.unidades = r.unidades; S.opp.envios = r.envios;
+  S.opp.unidades = r.unidades; S.opp.envios = r.envios; S.opp.detCache = {};
   if (S.opp.sel && !r.envios.find(e => e.id === S.opp.sel)) S.opp.sel = null;
   pintarOPP();
 }
@@ -939,9 +955,11 @@ function pintarOPP(){
   }
   $('#app').innerHTML = `${tabsOPP()}
     <div class="counts">${['SIN INICIAR','BORRADOR'].concat(ESTADOS.filter(x => x !== 'BORRADOR')).map(k => `<button class="count" data-est="${k}" aria-pressed="${S.ver==='bandeja' && S.opp.estado===k}"><b>${cnt[k] || 0}</b><span class="pill st-${k.split(' ')[0]}">${k}</span></button>`).join('')}
-    <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">de ${U.length} unidades orgánicas</span></div>
+    <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">de ${U.length} unidades orgánicas</span>
+    <button class="btn sm btn-ref" id="bRefrescar" title="Volver a leer los pedidos desde el Google Sheet">↻ Actualizar</button></div>
     ${body}`;
   bindTabs();
+  $('#bRefrescar').onclick = async () => { await abrirOPP(); if (S.opp.sel && S.opp.det){ S.opp.det = null; await verEnvio(S.opp.sel); } toast('Datos actualizados.'); };
   const fse = $('#fse'); if (fse) fse.onchange = () => { S.opp.se = fse.value; pintarOPP(); };
   document.querySelectorAll('.count').forEach(b => b.onclick = () => {
     const k = b.dataset.est;
@@ -955,7 +973,9 @@ function pintarOPP(){
   if (bO) bO.onclick = () => revisar('OBSERVADO');
 }
 async function verEnvio(id){
-  const r = await run('api_verEnvio', id);
+  S.opp.detCache = S.opp.detCache || {};
+  const r = S.opp.detCache[id] || await run('api_verEnvio', id);
+  S.opp.detCache[id] = r;
   S.opp.sel = id; S.opp.det = r; S.ver = 'bandeja'; S.opp.estado = r.envio.estado;
   pintarOPP();
   const d = $('#det'); if (d && window.innerWidth < 980) d.scrollIntoView({block:'start'});
@@ -1013,8 +1033,8 @@ async function revisar(dec){
   if (dec === 'OBSERVADO' && !com.trim()){ toast('Escribe la observación para el área.'); $('#com').focus(); return; }
   try {
     const r = await run('api_revisar', S.opp.sel, dec, com);
-    S.opp.unidades = r.unidades; S.opp.envios = r.envios;
-    const d = await run('api_verEnvio', S.opp.sel); S.opp.det = d; S.opp.estado = d.envio.estado;
+    S.opp.unidades = r.unidades; S.opp.envios = r.envios; S.opp.detCache = {};
+    const d = r.det || await run('api_verEnvio', S.opp.sel); S.opp.det = d; S.opp.estado = d.envio.estado; S.opp.detCache[S.opp.sel] = d;
     pintarOPP();
     toast(dec === 'APROBADO' ? 'Aprobado. El POI vigente de esas líneas ya se actualizó.' : 'Observado. El área ya puede corregir.');
   } catch(e){ toast((e && e.message) || String(e)); }
@@ -1284,7 +1304,7 @@ async function guardarNota(enviar){
   try {
     const r = await run('api_guardarNota', S.uo, { id: n.id, fuente: n.fuente, justCred: n.justCred, justAnu: n.justAnu,
       lineas: n.lineas.map(l => ({ id: l.id, sf: l.sf, cl: l.cl, fu: l.fu, nueva: !!l.nueva, cr: +l.cr || 0, an: +l.an || 0, ma: +l.ma || 0, md: +l.md || 0 })) }, enviar);
-    S.nm.notas = r.notas;
+    S.nm.notas = r.notas; S.opp.notasOk = false;
     const nn = r.notas.find(x => x.id === r.id);
     if (nn) S.nm.edit = JSON.parse(JSON.stringify(nn));
     S.nm.marcar = false;
@@ -1300,7 +1320,7 @@ async function eliminarNota(){
 /* ----- OPP: bandeja de notas ----- */
 async function abrirNotasOPP(){
   const r = await run('api_resumenNotas');
-  S.opp.notas = r.notas;
+  S.opp.notas = r.notas; S.opp.notasOk = true;
   if (S.opp.nsel && !r.notas.find(n => n.id === S.opp.nsel)) S.opp.nsel = null;
   if (!S.opp.unidades){ const u = await run('api_resumenOPP'); S.opp.unidades = u.unidades; S.opp.envios = u.envios; }
   S.ver = 'notasopp'; pintarOPP();
@@ -1314,13 +1334,15 @@ function pintarNotasOPP(){
   const sel = N.find(n => n.id === S.opp.nsel);
   $('#app').innerHTML = `${tabsOPP()}
     <div class="counts">${['ENVIADO','OBSERVADO','APROBADO'].map(k => `<button class="count" data-nest="${k}" aria-pressed="${S.opp.nest === k}"><b>${cnt[k] || 0}</b><span class="pill st-${k}">${k}</span></button>`).join('')}
-      <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">notas de modificación presupuestal · ${cnt.BORRADOR || 0} en borrador en las áreas</span></div>
+      <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">notas de modificación presupuestal · ${cnt.BORRADOR || 0} en borrador en las áreas</span>
+      <button class="btn sm btn-ref" id="bRefNotas" title="Volver a leer las notas desde el Google Sheet">↻ Actualizar</button></div>
     <div class="split">
       <section class="panel"><div class="tools"><select class="inp" id="fse" style="flex:1"><option value="">Todos los sectoristas</option>${ses.map(s => `<option ${s === S.opp.se ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
         <div class="list">${lista.length ? lista.map(n => `<button class="item" data-nsel="${esc(n.id)}" aria-current="${n.id === S.opp.nsel}"><b>${esc(n.numero)} <span>· ${esc(n.uo)}</span></b><span class="pill st-${esc(n.estado)}">${esc(n.estado)}</span>
           <span>${esc(n.fuente)} · ${n.lineas.length} clasificadores · S/ ${fmtS(n.totCred)}</span><span>${esc(n.enviado)}</span></button>`).join('') : '<div class="empty">No hay notas en este estado.</div>'}</div></section>
       <section class="panel" id="det">${sel ? detalleNotaOPP(sel) : '<div class="empty">Elige una nota de la lista para revisarla.</div>'}</section></div>`;
   bindTabs();
+  $('#bRefNotas').onclick = async () => { await abrirNotasOPP(); toast('Notas actualizadas.'); };
   const fse = $('#fse'); if (fse) fse.onchange = () => { S.opp.se = fse.value; pintarNotasOPP(); };
   document.querySelectorAll('[data-nest]').forEach(b => b.onclick = () => { S.opp.nest = b.dataset.nest; pintarNotasOPP(); });
   document.querySelectorAll('[data-nsel]').forEach(b => b.onclick = () => { S.opp.nsel = b.dataset.nsel; pintarNotasOPP(); const d = $('#det'); if (d && window.innerWidth < 980) d.scrollIntoView({block:'start'}); });
@@ -1506,6 +1528,7 @@ function iniciarDemo(){
 }
 if (!REAL) iniciarDemo();
 pintarLogin();
+if (REAL) call('api_ping').catch(() => {});   // despierta el servidor y prepara la caché mientras se escribe la clave
 </script>
 
 </html>
