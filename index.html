@@ -252,6 +252,12 @@ table.g td.det{white-space:normal;min-width:130px;max-width:220px}
 .ax-firma{width:320px;text-align:center;border-top:1px solid #333;padding-top:4px;font-weight:700;font-size:9.5px}
 .ax-firma span{font-weight:400}
 #printArea{display:none}
+.cons-f{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;padding:16px}
+.cons-f label.f select{width:100%}
+.cons-f .cons-x{grid-column:1/-1;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+@media (max-width:1000px){.cons-f{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.cons-f{grid-template-columns:1fr}}
+table.g.cons td.lin{min-width:320px;max-width:460px}
 .topbar{position:fixed;left:0;right:0;top:0;height:3px;z-index:60;background:linear-gradient(90deg,transparent,var(--gold,#C9A227),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:tb 1s linear infinite}
 @keyframes tb{from{background-position:-40% 0}to{background-position:140% 0}}
 .loading{background:rgba(11,42,74,.06)}
@@ -913,12 +919,13 @@ function tabsOPP(){
   if (S.sesion.rol !== 'OPP') return '';
   const sel = k => S.ver === k || (k === 'form' && (S.ver === 'notas' || S.ver === 'nota'));
   const t = (k, n) => `<button class="tab" data-v="${k}" aria-selected="${sel(k)}">${n}</button>`;
-  return `<nav class="tabs" role="tablist">${t('bandeja','Bandeja de pedidos')}${t('avance','Avance por unidad')}${t('notasopp','Notas de modificación')}${t('form','Formulario por unidad')}</nav>`;
+  return `<nav class="tabs" role="tablist">${t('bandeja','Bandeja de pedidos')}${t('avance','Avance por unidad')}${t('consolidado','Programación consolidada')}${t('form','Formulario por unidad')}${t('notasopp','Notas de modificación')}</nav>`;
 }
 function bindTabs(){
   document.querySelectorAll('.tab').forEach(b => b.onclick = async () => {
     const v = b.dataset.v;
     if (v === 'form'){ await abrirUO(S.uo || S.unidades[0].uo); return; }
+    if (v === 'consolidado'){ await abrirConsolidado(false); return; }
     if (v === 'notasopp'){ if (S.opp.notasOk) { S.ver = 'notasopp'; pintarOPP(); } else await abrirNotasOPP(); return; }
     S.ver = v;
     if (S.opp.unidades) pintarOPP(); else await abrirOPP();
@@ -926,13 +933,14 @@ function bindTabs(){
 }
 async function abrirOPP(){
   const r = await run('api_resumenOPP');
-  S.opp.unidades = r.unidades; S.opp.envios = r.envios; S.opp.detCache = {};
+  S.opp.unidades = r.unidades; S.opp.envios = r.envios; S.opp.detCache = {}; S.cons.data = null;
   if (S.opp.sel && !r.envios.find(e => e.id === S.opp.sel)) S.opp.sel = null;
   pintarOPP();
 }
 const ESTADOS = ['ENVIADO','OBSERVADO','APROBADO','BORRADOR'];
 function pintarOPP(){
   if (S.ver === 'notasopp') return pintarNotasOPP();
+  if (S.ver === 'consolidado') return pintarConsolidado();
   const U = S.opp.unidades || [], E = S.opp.envios || [];
   const cnt = {}; U.forEach(u => cnt[u.estado] = (cnt[u.estado] || 0) + 1);
   const ses = [...new Set(U.map(u => u.sectorista))].filter(Boolean).sort();
@@ -1033,7 +1041,7 @@ async function revisar(dec){
   if (dec === 'OBSERVADO' && !com.trim()){ toast('Escribe la observación para el área.'); $('#com').focus(); return; }
   try {
     const r = await run('api_revisar', S.opp.sel, dec, com);
-    S.opp.unidades = r.unidades; S.opp.envios = r.envios; S.opp.detCache = {};
+    S.opp.unidades = r.unidades; S.opp.envios = r.envios; S.opp.detCache = {}; S.cons.data = null;
     const d = r.det || await run('api_verEnvio', S.opp.sel); S.opp.det = d; S.opp.estado = d.envio.estado; S.opp.detCache[S.opp.sel] = d;
     pintarOPP();
     toast(dec === 'APROBADO' ? 'Aprobado. El POI vigente de esas líneas ya se actualizó.' : 'Observado. El área ya puede corregir.');
@@ -1379,6 +1387,173 @@ async function revisarNota(dec){
   } catch(e){ toast((e && e.message) || String(e)); }
 }
 
+/* ===================== OPP: Programación consolidada ===================== */
+const DIMS = [
+  { k:'og', n:'Órgano', pl:'órganos' }, { k:'uo', n:'Unidad orgánica', pl:'unidades orgánicas' }, { k:'sf', n:'SEC_FUNC', pl:'SEC_FUNC' },
+  { k:'cl', n:'Clasificador', pl:'clasificadores' }, { k:'fu', n:'Fuente de financiamiento', pl:'fuentes' }, { k:'c2', n:'Concepto', pl:'conceptos' } ];
+const VERSIONES = [
+  { k:'env', n:'Vigente + pedidos enviados a OPP' },
+  { k:'vig', n:'Solo programación aprobada (vigente)' },
+  { k:'all', n:'Incluye borradores y observados de las áreas' } ];
+S.cons = { data:null, grupo:'uo', f:{ og:'', uo:'', sf:'', cl:'', fu:'', c2:'' }, ver:'env', soloMod:false };
+
+async function abrirConsolidado(forzar){
+  if (!S.cons.data || forzar) S.cons.data = await run('api_consolidado');
+  S.ver = 'consolidado'; pintarOPP();
+}
+/** Programación de una fila según la versión elegida */
+function consProg(r){
+  const usa = r.p && (S.cons.ver === 'all' || (S.cons.ver === 'env' && r.pe === 'ENVIADO'));
+  return usa ? { m: r.p, sd: r.psd, mod: true, est: r.pe } : { m: r.v, sd: r.sd, mod: false, est: r.ap ? 'APROBADO' : '' };
+}
+const consEtq = (k, r) => k === 'sf' ? pad4(r.sf) + ' · ' + cap(sinCod(r.fi)).slice(0, 70)
+  : k === 'cl' ? clCod(r.cl) + ' · ' + clNom(r.cl)
+  : k === 'uo' ? r.uo + (r.og && r.og !== r.uo ? ' (' + r.og + ')' : '') : String(r[k] || '—');
+const consClave = (k, r) => k === 'sf' ? String(r.sf) : k === 'cl' ? clCod(r.cl) : String(r[k] || '');
+function consFiltradas(excepto){
+  const f = S.cons.f;
+  return (S.cons.data ? S.cons.data.filas : []).filter(r => DIMS.every(d => d.k === excepto || !f[d.k] || consClave(d.k, r) === f[d.k])
+    && (!S.cons.soloMod || consProg(r).mod));
+}
+function pintarConsolidado(){
+  const D = S.cons.data, ini = D.ini, g = S.cons.grupo;
+  const filas = consFiltradas();
+  // Opciones de cada filtro según los demás filtros aplicados
+  const opciones = d => {
+    const m = {};
+    consFiltradas(d.k).forEach(r => { m[consClave(d.k, r)] = consEtq(d.k, r); });
+    return Object.keys(m).sort((a, b) => d.k === 'sf' ? a - b : String(m[a]).localeCompare(String(m[b]))).map(k => ({ k, n: m[k] }));
+  };
+  // Agrupación (1ra columna)
+  const grupos = {}, orden = [];
+  let T = { pim:0, ej:0, m:new Array(12).fill(0), sd:0, n:0, mod:0 };
+  filas.forEach(r => {
+    const k = consClave(g, r), P = consProg(r);
+    let G = grupos[k];
+    if (!G){ G = grupos[k] = { k, etq: consEtq(g, r), pim:0, ej:0, m:new Array(12).fill(0), sd:0, n:0, mod:0 }; orden.push(k); }
+    [G, T].forEach(x => { x.pim += r.pim; x.ej += r.ej; x.sd += +P.sd || 0; x.n++; if (P.mod) x.mod++; for (let i = ini; i < 12; i++) x.m[i] += P.m[i]; });
+  });
+  orden.sort((a, b) => g === 'sf' ? a - b : String(grupos[a].etq).localeCompare(String(grupos[b].etq)));
+  const meses = MES.slice(ini);
+  const prog = x => x.m.slice(ini).reduce((a, b) => a + b, 0);
+  const nombreDim = (DIMS.find(d => d.k === g) || {}).n;
+  const hayF = DIMS.some(d => S.cons.f[d.k]) || S.cons.soloMod;
+  $('#app').innerHTML = `${tabsOPP()}
+    <div class="head"><div><div class="sub">${esc(D.proceso)} · base SIAF corte ${esc(D.corte)}</div><h2>Programación consolidada</h2></div>
+      <span class="grow"></span><button class="btn sm" id="bRefCons" title="Volver a leer la programación desde el Google Sheet">↻ Actualizar</button>
+      <button class="btn primary" id="bXls"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Descargar Excel</button></div>
+    <section class="panel cons-f">
+      <label class="f">Mostrar en la 1.ª columna<select class="inp" id="cGrupo">${DIMS.map(d => `<option value="${d.k}" ${d.k === g ? 'selected' : ''}>${d.n}</option>`).join('')}</select></label>
+      ${DIMS.map(d => `<label class="f">${d.n}<select class="inp" data-cf="${d.k}"><option value="">Todos</option>${opciones(d).map(o => `<option value="${esc(o.k)}" ${o.k === S.cons.f[d.k] ? 'selected' : ''}>${esc(o.n)}</option>`).join('')}</select></label>`).join('')}
+      <label class="f">Versión de la programación<select class="inp" id="cVer">${VERSIONES.map(v => `<option value="${v.k}" ${v.k === S.cons.ver ? 'selected' : ''}>${v.n}</option>`).join('')}</select></label>
+      <div class="cons-x"><label class="chk"><input type="checkbox" id="cMod" ${S.cons.soloMod ? 'checked' : ''}> Solo clasificadores modificados por las áreas</label>
+        ${hayF ? '<button class="ico" id="cLimpiar">Limpiar filtros</button>' : ''}</div>
+    </section>
+    <div class="kpis">
+      <div class="kpi"><small>PIM</small><b>${fmtM(T.pim)}</b><i>${T.n} clasificadores</i></div>
+      <div class="kpi"><small>Ejecución ${MES[0]}–${MES[ini - 1] || ''}</small><b>${fmtM(T.ej)}</b><i>${T.pim ? (T.ej / T.pim * 100).toFixed(1) : 0}% del PIM</i></div>
+      <div class="kpi"><small>Programado ${meses[0]}–${meses[meses.length - 1]}</small><b>${fmtM(prog(T))}</b><i>según la versión elegida</i></div>
+      <div class="kpi ${T.pim - T.ej - prog(T) < -1 ? 'bad' : ''}"><small>Saldo PIM sin programar</small><b>${fmtM(T.pim - T.ej - prog(T))}</b><i>PIM − ejecución − programado</i></div>
+      <div class="kpi ${T.sd > 0 ? 'warn' : ''}"><small>Saldo declarado</small><b>${fmtM(T.sd)}</b><i>no se ejecutará al cierre</i></div>
+      <div class="kpi ${T.mod ? 'warn' : ''}"><small>Modificados por las áreas</small><b>${T.mod}</b><i>clasificadores con cambios</i></div>
+    </div>
+    <section class="panel"><div class="tbl-wrap" style="max-height:66vh;overflow:auto"><table class="g cons">
+      <thead><tr><th class="lin">${esc(nombreDim)}</th><th>PIM</th><th>Ejecución<br><span class="thn">${MES[0]}–${MES[ini - 1] || ''}</span></th>${meses.map(m => `<th class="mes-edit">${m}<br><span class="thn">programado</span></th>`).join('')}<th class="sd-h">Saldo<br>declarado</th></tr></thead>
+      <tbody>${orden.length ? orden.map(k => { const G = grupos[k]; return `<tr><td class="lin"><div class="ln">${esc(G.etq)}</div><div class="meta">${G.n} clasificador${G.n === 1 ? '' : 'es'}${G.mod ? ` · <span style="color:var(--warn)">${G.mod} modificado${G.mod === 1 ? '' : 's'}</span>` : ''}</div></td>
+        <td class="num">${fmt(G.pim)}</td><td class="num closed">${fmt(G.ej)}</td>${G.m.slice(ini).map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num sdc">${fmt(G.sd)}</td></tr>`; }).join('')
+        : `<tr><td class="l" colspan="${4 + meses.length}"><div class="empty">No hay clasificadores con esos filtros.</div></td></tr>`}</tbody>
+      <tfoot><tr><td class="lin">Total (${orden.length} ${esc(orden.length === 1 ? nombreDim.toLowerCase() : (DIMS.find(d => d.k === g) || {}).pl)})</td><td class="num">${fmt(T.pim)}</td><td class="num">${fmt(T.ej)}</td>${T.m.slice(ini).map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num sdc">${fmt(T.sd)}</td></tr></tfoot>
+    </table></div></section>
+    <p class="meta">La versión «Vigente + pedidos enviados» muestra lo aprobado por OPP y, donde una unidad tiene un pedido enviado pendiente de revisión, su propuesta. El Excel descarga cada clasificador que cumple los filtros, con los 12 meses (${MES[0]}–${MES[ini - 1] || ''} = devengado).</p>`;
+  bindTabs();
+  $('#cGrupo').onchange = e => { S.cons.grupo = e.target.value; pintarConsolidado(); };
+  document.querySelectorAll('[data-cf]').forEach(s => s.onchange = () => { S.cons.f[s.dataset.cf] = s.value; pintarConsolidado(); });
+  $('#cVer').onchange = e => { S.cons.ver = e.target.value; pintarConsolidado(); };
+  $('#cMod').onchange = e => { S.cons.soloMod = e.target.checked; pintarConsolidado(); };
+  const cl = $('#cLimpiar'); if (cl) cl.onclick = () => { DIMS.forEach(d => S.cons.f[d.k] = ''); S.cons.soloMod = false; pintarConsolidado(); };
+  $('#bRefCons').onclick = async () => { await abrirConsolidado(true); toast('Programación actualizada.'); };
+  $('#bXls').onclick = descargarExcel;
+}
+
+/* ---------- Generador de Excel (.xlsx) sin librerías externas ---------- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++){ let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b){ let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files){   // files: [{name, data:Uint8Array}] → Uint8Array (ZIP sin compresión)
+  const enc = new TextEncoder(), partes = [], central = []; let off = 0;
+  const u16 = v => [v & 255, (v >>> 8) & 255], u32 = v => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+  files.forEach(f => {
+    const nb = enc.encode(f.name), crc = crc32(f.data), n = f.data.length;
+    const loc = [].concat(u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(n), u32(n), u16(nb.length), u16(0));
+    partes.push(new Uint8Array(loc), nb, f.data);
+    central.push(new Uint8Array([].concat(u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(n), u32(n), u16(nb.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(off))), nb);
+    off += loc.length + nb.length + n;
+  });
+  const tamC = central.reduce((a, x) => a + x.length, 0);
+  const fin = new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(tamC), u32(off), u16(0)));
+  const todo = partes.concat(central, [fin]), out = new Uint8Array(todo.reduce((a, x) => a + x.length, 0));
+  let p = 0; todo.forEach(x => { out.set(x, p); p += x.length; });
+  return out;
+}
+/** hojas: [{nombre, filas:[[...]], anchos:[n], numDesde, numHasta, congelar:{c,r}, filtro:true}] → Blob .xlsx */
+function crearXlsx(hojas){
+  const enc = new TextEncoder(), xe = v => String(v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+  const col = i => { let s = ''; i++; while (i){ const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const archivos = [];
+  const add = (n, t) => archivos.push({ name: n, data: enc.encode(t) });
+  add('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${hojas.map((h, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`);
+  add('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+  add('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${hojas.map((h, i) => `<sheet name="${xe(h.nombre).slice(0, 31)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${hojas.some(h => h.filtro) ? `<definedNames>${hojas.map((h, i) => h.filtro ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xe(h.nombre)}'!$A$1:$${col(h.filas[0].length - 1)}$${h.filas.length}</definedName>` : '').join('')}</definedNames>` : ''}</workbook>`);
+  add('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${hojas.map((h, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${hojas.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  // Estilos: 0 normal · 1 cabecera (negrita, fondo azul, texto blanco) · 2 número #,##0.00 · 3 negrita (títulos)
+  add('xl/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts><fonts count="3"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0B2A4A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`);
+  hojas.forEach((h, i) => {
+    const filas = h.filas.map((f, r) => `<row r="${r + 1}">${f.map((v, c) => {
+      const ref = col(c) + (r + 1);
+      if (v === null || v === undefined || v === '') return '';
+      const cab = h.cabecera && r === 0, tit = h.titulos && h.titulos.indexOf(r) >= 0;
+      if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"${cab ? ' s="1"' : h.numDesde != null && c >= h.numDesde && c <= h.numHasta ? ' s="2"' : ''}><v>${v}</v></c>`;
+      return `<c r="${ref}" t="inlineStr"${cab ? ' s="1"' : tit ? ' s="3"' : ''}><is><t xml:space="preserve">${xe(v)}</t></is></c>`;
+    }).join('')}</row>`).join('');
+    const cong = h.congelar ? `<sheetViews><sheetView workbookViewId="0"><pane xSplit="${h.congelar.c}" ySplit="${h.congelar.r}" topLeftCell="${col(h.congelar.c)}${h.congelar.r + 1}" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>` : '';
+    const anchos = h.anchos ? `<cols>${h.anchos.map((w, c) => `<col min="${c + 1}" max="${c + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+    const filtro = h.filtro ? `<autoFilter ref="A1:${col(h.filas[0].length - 1)}${h.filas.length}"/>` : '';
+    add(`xl/worksheets/sheet${i + 1}.xml`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${cong}${anchos}<sheetData>${filas}</sheetData>${filtro}</worksheet>`);
+  });
+  return new Blob([zipStore(archivos)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+function bajarArchivo(blob, nombre){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+async function descargarExcel(){
+  const D = S.cons.data, filas = consFiltradas().slice().sort((a, b) => a.sf - b.sf || clCod(a.cl).localeCompare(clCod(b.cl)) || String(a.fu).localeCompare(String(b.fu)));
+  if (!filas.length){ toast('No hay clasificadores con esos filtros.'); return; }
+  const ver = VERSIONES.find(v => v.k === S.cons.ver).n;
+  const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(['Total anual','Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']);
+  const cuerpo = filas.map(r => { const P = consProg(r), tot = P.m.reduce((a, b) => a + b, 0);
+    return [pad4(r.sf), r.cl, r.fu].concat(P.m.map(v => Math.round(v * 100) / 100)).concat([Math.round(tot * 100) / 100, +P.sd || 0, r.uo, r.og, r.c2,
+      P.mod ? (P.est === 'ENVIADO' ? 'Propuesta enviada a OPP' : 'Propuesta en ' + String(P.est).toLowerCase()) : (P.est === 'APROBADO' ? 'Aprobado por OPP' : 'POI inicial')]); });
+  const hoy = new Date(), p2 = n => String(n).padStart(2, '0');
+  const nombre = `Programacion_${S.cons.ver === 'vig' ? 'vigente' : S.cons.ver === 'env' ? 'vigente_mas_enviados' : 'con_borradores'}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}`;
+  const filt = DIMS.filter(d => S.cons.f[d.k]).map(d => { const r = filas.find(x => consClave(d.k, x) === S.cons.f[d.k]); return [d.n, r ? consEtq(d.k, r) : S.cons.f[d.k]]; });
+  const par = [['Programación y Modificación Presupuestal · ATU'], [], ['Proceso', D.proceso], ['Base SIAF (corte)', D.corte], ['Versión', ver],
+    ['Solo modificados por las áreas', S.cons.soloMod ? 'Sí' : 'No'], ['Clasificadores', cuerpo.length],
+    ['Generado', `${p2(hoy.getDate())}/${p2(hoy.getMonth() + 1)}/${hoy.getFullYear()} ${p2(hoy.getHours())}:${p2(hoy.getMinutes())}`], [], ['Filtros aplicados']].concat(filt.length ? filt : [['(ninguno)']]);
+  try {
+    const blob = crearXlsx([
+      { nombre:'Programación', filas:[cab].concat(cuerpo), cabecera:true, numDesde:3, numHasta:16, congelar:{c:3, r:1}, filtro:true,
+        anchos:[10, 50, 30].concat(MES.map(() => 14)).concat([16, 15, 12, 9, 30, 24]) },
+      { nombre:'Parámetros', filas:par, titulos:[0, 9], anchos:[32, 70] } ]);
+    bajarArchivo(blob, nombre + '.xlsx');
+    toast(`Excel descargado: ${cuerpo.length} clasificadores.`);
+  } catch(e){
+    const csv = '﻿' + [cab].concat(cuerpo).map(f => f.map(v => typeof v === 'number' ? String(v) : '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\r\n');
+    bajarArchivo(new Blob([csv], { type:'text/csv;charset=utf-8' }), nombre + '.csv');
+    toast('Se descargó en formato CSV (se abre con Excel).');
+  }
+}
+
 /* ===================== Demostración (solo fuera de Apps Script) ===================== */
 let MOCK = null;
 function iniciarDemo(){
@@ -1493,6 +1668,19 @@ function iniciarDemo(){
       const ls = {}; lineasUO(e.uo).forEach(L => ls[L.id] = L);
       return { envio: e, lineas: (detalle[id] || []).map(d => { const L = ls[d.id] || nueva(base.find(b => b.uo === e.uo && b.sf == d.sf), d.cl, d.fu);
         return Object.assign({}, L, { propuesto: d.m, propDsc: d.d, propSd: +d.sd || 0, just: d.just }); }) };
+    },
+    api_consolidado(t){
+      ses(t); const filas = [];
+      uni.forEach(u => {
+        const ls = lineasUO(u.uo), porId = {}; ls.forEach(L => porId[L.id] = L);
+        const e = envios.filter(x => x.uo === u.uo && x.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(x.estado)).pop();
+        const pend = {}; if (e) (detalle[e.id] || []).forEach(d => { pend[d.id] = d; if (!porId[d.id]){ const ref = base.find(b => b.uo === u.uo && b.sf == d.sf); if (ref){ const N = nueva(ref, d.cl, d.fu); porId[N.id] = N; ls.push(N); } } });
+        ls.forEach(L => { const p = pend[L.id];
+          filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
+            v: MES.map((_, i) => i < ini ? L.dv[i] : L.po[i]), sd:+L.sd || 0, ap:L.vigenteDe ? 1 : 0, nv:L.nueva ? 1 : 0,
+            p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '' }); });
+      });
+      return { ini, anio:cfg.anio, proceso:cfg.proceso, corte:cfg.fechaCorte, filas };
     },
     api_notasUO(t, uo){ ses(t); return { notas: JSON.parse(JSON.stringify(notas.filter(n => n.uo === uo).slice().reverse())) }; },
     api_resumenNotas(t){ ses(t); return { notas: JSON.parse(JSON.stringify(notas.slice().reverse())) }; },
