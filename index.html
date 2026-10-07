@@ -252,6 +252,9 @@ table.g td.det{white-space:normal;min-width:130px;max-width:220px}
 .ax-firma{width:320px;text-align:center;border-top:1px solid #333;padding-top:4px;font-weight:700;font-size:9.5px}
 .ax-firma span{font-weight:400}
 #printArea{display:none}
+.strip .sc-anio{padding:2px 6px 2px 10px;cursor:pointer;background:var(--accent-soft);border-color:transparent}
+.strip .sc-anio select{border:0;background:transparent;font:inherit;font-weight:700;color:var(--ink);cursor:pointer;padding:2px 2px}
+.strip .sc-anio.off{background:var(--warn-soft)}
 .cons-f{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;padding:16px}
 .cons-f label.f select{width:100%}
 .cons-f .cons-x{grid-column:1/-1;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
@@ -458,7 +461,7 @@ function busy(on){
 }
 async function run(fn, ...args){
   busy(true);
-  try { return await call(fn, S.token, ...args); }
+  try { return await call(fn, S.token + (S.anio ? '|' + S.anio : ''), ...args); }
   catch(e){ const m = (e && e.message) || String(e); if (m.indexOf('SESION_EXPIRADA') >= 0){ toast('Tu sesión venció. Vuelve a ingresar.'); salir(); } throw e; }
   finally { busy(false); }
 }
@@ -494,7 +497,7 @@ function pintarLogin(msg){
     try {
       const r = await call('api_login', $('#u').value, $('#c').value);
       if (!r) throw new Error('El servidor no devolvió datos. Revisa la hoja Config y vuelve a implementar.');
-      Object.assign(S, { token:r.token, sesion:r.sesion, config:r.config, unidades:r.unidades });
+      Object.assign(S, { token:r.token, sesion:r.sesion, config:r.config, unidades:r.unidades, anio:r.config.anio });
       S.ver = r.sesion.rol === 'OPP' ? 'bandeja' : 'form';
       pintarCabecera();
       if (S.ver === 'bandeja'){ if (r.resumen){ S.opp.unidades = r.resumen.unidades; S.opp.envios = r.resumen.envios; pintarOPP(); } else await abrirOPP(); }
@@ -513,13 +516,40 @@ function pintarCabecera(){
   $('#bSalir').onclick = salir;
   const ini = c.mesInicio;
   $('#strip').hidden = false;
+  const anios = c.anios && c.anios.length ? c.anios : [c.anio];
   $('#stripIn').innerHTML = `
+    <label class="sc sc-anio ${c.esActivo === false ? 'off' : ''}"><i>Año fiscal</i><select id="selAnio" aria-label="Año fiscal" ${anios.length > 1 ? '' : 'disabled'}>${anios.map(a => `<option value="${esc(a)}" ${String(a) === String(c.anio) ? 'selected' : ''}>${esc(a)}${String(a) === String(c.activo || c.anio) ? ' · activo' : ' · consulta'}</option>`).join('')}</select></label>
     <span class="sc"><i>Proceso</i><b>${esc(c.proceso)}</b></span>
-    <span class="sc"><i>Meses editables</i><b>${MES[ini-1]}–Dic ${esc(c.anio)}</b></span>
+    ${c.esActivo === false ? `<span class="sc off"><i>Modo</i><b>solo consulta</b></span>` : `<span class="sc"><i>Meses editables</i><b>${MES[ini-1]}–Dic ${esc(c.anio)}</b></span>`}
     ${c.tipo === 'REPROGRAMACION' && ini > 1 ? `<span class="sc"><i>${MES[0]}–${MES[ini-2]}</i><b>devengado real</b></span>` : ''}
     <span class="sc"><i>Base SIAF</i><b>corte ${esc(c.fechaCorte)}</b></span>
     ${c.fechaLimite ? `<span class="sc"><i>Fecha límite</i><b>${esc(c.fechaLimite)}</b></span>` : ''}
-    ${!c.abierto ? '<span class="sc off"><b>Proceso cerrado · solo consulta</b></span>' : ''}`;
+    ${!c.abierto && c.esActivo !== false ? '<span class="sc off"><b>Proceso cerrado · solo consulta</b></span>' : ''}`;
+  const sa = $('#selAnio'); if (sa) sa.onchange = () => cambiarAnio(sa.value);
+}
+
+/** Cambia el año fiscal que se está viendo: recarga configuración, unidades y la vista actual */
+async function cambiarAnio(anio){
+  const previo = S.anio;
+  if (S.ver === 'form' && S.lineas.some(modificada) && editable() && !cambiarAnio.ok){
+    cambiarAnio.ok = true; toast('Tienes cambios sin guardar. Guarda el borrador o vuelve a elegir el año para descartarlos.'); $('#selAnio').value = previo; return; }
+  cambiarAnio.ok = false;
+  S.anio = anio;
+  try {
+    const r = await run('api_contexto');
+    S.config = r.config; S.unidades = r.unidades;
+    S.opp = { estado:'ENVIADO', se:'', sel:null, det:null, nest:'ENVIADO', nsel:null, notas:[] };
+    S.cons.data = null; S.nm = { notas:[], edit:null, agrSf:'', marcar:false };
+    pintarCabecera();
+    if (S.sesion.rol === 'OPP'){ S.ver = 'bandeja'; await abrirOPP(); }
+    else if (S.unidades.length) await abrirUO(S.unidades.find(u => u.uo === S.uo) ? S.uo : S.unidades[0].uo);
+    else $('#app').innerHTML = `<div class="banner info">Tu unidad no tiene clasificadores en el año fiscal ${esc(anio)}.</div>`;
+    toast('Año fiscal ' + anio + (S.config.esActivo ? ' (activo).' : ' · solo consulta.'));
+  } catch(e){ S.anio = previo; $('#selAnio').value = previo; toast((e && e.message) || String(e)); }
+}
+function bannerAnio(){
+  const c = S.config;
+  return c.esActivo === false ? `<div class="banner warn"><b>Año fiscal ${esc(c.anio)} · solo consulta.</b> Estás viendo la programación, los pedidos y las notas de ese año tal como quedaron. Para registrar cambios elige el año activo (${esc(c.activo)}) en «Año fiscal».</div>` : '';
 }
 
 /* ===================== Cálculos por línea ===================== */
@@ -669,6 +699,7 @@ function cambiarUO(uo){
 
 function bannerEstado(){
   const e = S.envio, c = S.config;
+  if (c.esActivo === false) return bannerAnio();
   if (!c.abierto) return `<div class="banner warn"><b>El proceso está cerrado.</b> Puedes consultar la programación, pero no registrar cambios.</div>`;
   if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.</div>`;
   if (e.estado === 'ENVIADO') return `<div class="banner warn"><b>Pedido enviado a OPP el ${esc(e.enviado)}.</b> Queda bloqueado hasta que OPP lo apruebe u observe.</div>`;
@@ -991,7 +1022,7 @@ function pintarOPP(){
           <span>${e.lineas} líneas · ${fmtM(e.variacion)} movidos</span><span>${esc(e.enviado)}</span></button>`).join('') : '<div class="empty">No hay pedidos en este estado.</div>'}</div></section>
       <section class="panel" id="det">${S.opp.det ? detalleEnvio() : '<div class="empty">Elige un pedido de la lista para revisarlo.</div>'}</section></div>`;
   }
-  $('#app').innerHTML = `${tabsOPP()}
+  $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="counts">${['SIN INICIAR','BORRADOR'].concat(ESTADOS.filter(x => x !== 'BORRADOR')).map(k => `<button class="count" data-est="${k}" aria-pressed="${S.ver==='bandeja' && S.opp.estado===k}"><b>${cnt[k] || 0}</b><span class="pill st-${k.split(' ')[0]}">${k}</span></button>`).join('')}
     <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">de ${U.length} unidades orgánicas</span>
     <button class="btn sm btn-ref" id="bRefrescar" title="Volver a leer los pedidos desde el Google Sheet">↻ Actualizar</button></div>
@@ -1047,7 +1078,7 @@ function detalleEnvio(){
         <td class="num">${fmt(tt)}</td><td class="num sdc"><b>${fmt(sdP)}</b>${Math.abs(sdX) > .5 ? `<span class="vig ${sdX>0?'diff-dn':'diff-up'}">${sdX>0?'+':''}${fmt(sdX)}</span>` : ''}</td></tr>`;
     });
   });
-  const puede = e.estado === 'ENVIADO';
+  const puede = e.estado === 'ENVIADO' && S.config.esActivo !== false;
   return `<div class="detail">
     <div class="head"><div><div class="sub">${esc(e.og)} · Pedido ${esc(e.id)}</div><h2>${esc(e.uo)}</h2></div><span class="pill st-${esc(e.estado)}">${esc(e.estado)}</span></div>
     <div class="kv">
@@ -1090,7 +1121,7 @@ const UEJ = () => S.config.ue || '001. AUTORIDAD DE TRANSPORTE URBANO PARA LIMA 
 
 function nmLinea(L){ return { id:L.id, sf:L.sf, cl:L.cl, fu:L.fu, nueva:!!L.nueva, pr:L.pr, pp:L.pp, ao:L.ao, fi:L.fi, um:L.um,
   ma:+L.cm || 0, md:+L.cm || 0, pim:+L.pim || 0, ce:+L.ce || 0, cr:0, an:0 }; }
-function nmEditable(){ const e = S.nm.edit && S.nm.edit.estado; return !e || e === 'BORRADOR' || e === 'OBSERVADO'; }
+function nmEditable(){ const e = S.nm.edit && S.nm.edit.estado; return S.config.esActivo !== false && (!e || e === 'BORRADOR' || e === 'OBSERVADO'); }
 function nmTot(n){ let pim = 0, ce = 0, cr = 0, an = 0, ncr = 0, nan = 0;
   n.lineas.forEach(l => { pim += +l.pim || 0; ce += +l.ce || 0; cr += +l.cr || 0; an += +l.an || 0; if (+l.cr) ncr++; if (+l.an) nan++; });
   return { pim, ce, sal: pim - ce, cr, an, fin: pim + cr - an, ncr, nan }; }
@@ -1120,7 +1151,8 @@ function pintarNotas(){
   const N = S.nm.notas || [];
   $('#app').innerHTML = `${tabsOPP()}
     <div class="head"><div><div class="sub">${esc(u.og)} · ${esc(S.uo)}</div><h2>Notas de modificación presupuestal</h2></div>
-      <span class="grow"></span><button class="btn" id="bVolverProg">← Volver a la programación</button><button class="btn primary" id="bNuevaNota">+ Nueva nota</button></div>
+      <span class="grow"></span><button class="btn" id="bVolverProg">← Volver a la programación</button>${S.config.esActivo === false ? '' : '<button class="btn primary" id="bNuevaNota">+ Nueva nota</button>'}</div>
+    ${bannerAnio()}
     <div class="banner info"><b>Anexo N° 02 – Solicitud de nota de modificación presupuestaria.</b> Cada nota es de una sola fuente de financiamiento. Los clasificadores que ceden recursos llevan <b>anulación</b> (hasta su saldo por certificar) y los que los reciben llevan <b>crédito</b>; el total de créditos debe ser igual al de anulaciones. Los montos, el PIM y el certificado salen de la base del SIAF. Al enviarla, OPP la revisa y el formato queda listo para imprimir o guardar en PDF.</div>
     <section class="panel"><div class="tbl-wrap"><table class="g"><thead><tr><th class="l">N° de nota</th><th class="l">Estado</th><th class="l">Fuente</th><th>Clasificadores</th><th>Crédito (S/)</th><th>Anulación (S/)</th><th class="l">Creada</th><th class="l">Enviada</th><th class="l">Revisión OPP</th><th></th></tr></thead><tbody>
     ${N.length ? N.map(n => `<tr><td class="l num">${esc(n.numero || 'Sin número (borrador)')}</td><td class="l"><span class="pill st-${esc(n.estado)}">${esc(n.estado)}</span></td><td class="l">${esc(n.fuente)}</td><td class="num">${n.lineas.length}</td><td class="num">${fmtS(n.totCred)}</td><td class="num">${fmtS(n.totAnu)}</td><td class="l">${esc(n.creado)}</td><td class="l">${esc(n.enviado || '—')}</td><td class="l" style="white-space:normal">${esc(n.revisor ? n.revisor + ' · ' + n.fechaRev : '—')}${n.comentario ? '<div class="meta">' + esc(n.comentario) + '</div>' : ''}</td><td><div class="acts"><button class="ico" data-nota="${esc(n.id)}">${['BORRADOR','OBSERVADO'].includes(n.estado) ? 'Editar' : 'Ver'}</button></div></td></tr>`).join('')
@@ -1128,7 +1160,7 @@ function pintarNotas(){
     </tbody></table></div></section>`;
   bindTabs();
   $('#bVolverProg').onclick = () => abrirUO(S.uo);
-  $('#bNuevaNota').onclick = nuevaNota;
+  const bnn = $('#bNuevaNota'); if (bnn) bnn.onclick = nuevaNota;
   document.querySelectorAll('[data-nota]').forEach(b => b.onclick = () => abrirNota(b.dataset.nota));
 }
 
@@ -1370,7 +1402,7 @@ function pintarNotasOPP(){
   const seDe = uo => (U.find(u => u.uo === uo) || {}).sectorista;
   const lista = N.filter(n => n.estado !== 'BORRADOR' && (!S.opp.nest || n.estado === S.opp.nest) && (!S.opp.se || seDe(n.uo) === S.opp.se));
   const sel = N.find(n => n.id === S.opp.nsel);
-  $('#app').innerHTML = `${tabsOPP()}
+  $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="counts">${['ENVIADO','OBSERVADO','APROBADO'].map(k => `<button class="count" data-nest="${k}" aria-pressed="${S.opp.nest === k}"><b>${cnt[k] || 0}</b><span class="pill st-${k}">${k}</span></button>`).join('')}
       <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">notas de modificación presupuestal · ${cnt.BORRADOR || 0} en borrador en las áreas</span>
       <button class="btn sm btn-ref" id="bRefNotas" title="Volver a leer las notas desde el Google Sheet">↻ Actualizar</button></div>
@@ -1390,7 +1422,7 @@ function pintarNotasOPP(){
   if (bO) bO.onclick = () => revisarNota('OBSERVADO');
 }
 function detalleNotaOPP(n){
-  const t = nmTot(n), puede = n.estado === 'ENVIADO';
+  const t = nmTot(n), puede = n.estado === 'ENVIADO' && S.config.esActivo !== false;
   return `<div class="detail">
     <div class="head"><div><div class="sub">${esc(n.og)} · ${esc(n.uo)} · ${esc(n.fuente)}</div><h2>${esc(n.numero)}</h2></div><span class="pill st-${esc(n.estado)}">${esc(n.estado)}</span><span class="grow"></span><button class="btn sm" id="nmImprimir">Imprimir / PDF</button></div>
     <div class="kv">
@@ -1468,8 +1500,8 @@ function pintarConsolidado(){
   const prog = x => x.m.slice(ini).reduce((a, b) => a + b, 0);
   const nombreDim = (DIMS.find(d => d.k === g) || {}).n;
   const hayF = DIMS.some(d => S.cons.f[d.k]) || S.cons.soloMod;
-  $('#app').innerHTML = `${tabsOPP()}
-    <div class="head"><div><div class="sub">${esc(D.proceso)} · base SIAF corte ${esc(D.corte)}</div><h2>Programación consolidada</h2></div>
+  $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
+    <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio)} · ${esc(D.proceso)} · base SIAF corte ${esc(D.corte)}</div><h2>Programación consolidada</h2></div>
       <span class="grow"></span><button class="btn sm" id="bRefCons" title="Volver a leer la programación desde el Google Sheet">↻ Actualizar</button>
       <button class="btn primary" id="bXls"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Descargar Excel</button></div>
     <section class="panel cons-f">
@@ -1565,9 +1597,9 @@ async function descargarExcel(){
     return [pad4(r.sf), r.cl, r.fu].concat(P.m.map(v => Math.round(v * 100) / 100)).concat([Math.round(tot * 100) / 100, +P.sd || 0, r.uo, r.og, r.c2,
       P.mod ? (P.est === 'ENVIADO' ? 'Propuesta enviada a OPP' : 'Propuesta en ' + String(P.est).toLowerCase()) : (P.est === 'APROBADO' ? 'Aprobado por OPP' : 'POI inicial')]); });
   const hoy = new Date(), p2 = n => String(n).padStart(2, '0');
-  const nombre = `Programacion_${S.cons.ver === 'vig' ? 'vigente' : S.cons.ver === 'env' ? 'vigente_mas_enviados' : 'con_borradores'}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}`;
+  const nombre = `Programacion_${D.anio}_${S.cons.ver === 'vig' ? 'vigente' : S.cons.ver === 'env' ? 'vigente_mas_enviados' : 'con_borradores'}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}`;
   const filt = DIMS.filter(d => S.cons.f[d.k]).map(d => { const r = filas.find(x => consClave(d.k, x) === S.cons.f[d.k]); return [d.n, r ? consEtq(d.k, r) : S.cons.f[d.k]]; });
-  const par = [['Programación y Modificación Presupuestal · ATU'], [], ['Proceso', D.proceso], ['Base SIAF (corte)', D.corte], ['Versión', ver],
+  const par = [['Programación y Modificación Presupuestal · ATU'], [], ['Año fiscal', D.anio], ['Proceso', D.proceso], ['Base SIAF (corte)', D.corte], ['Versión', ver],
     ['Solo modificados por las áreas', S.cons.soloMod ? 'Sí' : 'No'], ['Clasificadores', cuerpo.length],
     ['Generado', `${p2(hoy.getDate())}/${p2(hoy.getMonth() + 1)}/${hoy.getFullYear()} ${p2(hoy.getHours())}:${p2(hoy.getMinutes())}`], [], ['Filtros aplicados']].concat(filt.length ? filt : [['(ninguno)']]);
   try {
@@ -1596,7 +1628,7 @@ function iniciarDemo(){
     return Object.keys(u).sort().map(k => { const x = u[k]; return {og:x.og, uo:x.uo, lineas:x.lineas, pim:Math.round(x.pim), sectorista:Object.keys(x.se).sort((a,b)=>x.se[b]-x.se[a])[0]}; }); })();
   const ini = cfg.mesInicio - 1;
   const hoy = () => { const d = new Date(); const p = n => String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-  const ses = t => { const s = sesiones[t]; if (!s) throw new Error('SESION_EXPIRADA'); return s; };
+  const ses = t => { const s = sesiones[String(t).split('|')[0]]; if (!s) throw new Error('SESION_EXPIRADA'); return s; };
   const activo = uo => envios.filter(e => e.uo === uo && e.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(e.estado)).pop() || null;
   const nueva = (ref, cl, fu) => Object.assign({}, ref, { id: idNueva(ref.sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado', pim:0, ce:0, co:0, dva:0, po:Z12(), poOrig:Z12(), dv:Z12(), dsc:E12(), sd:0, vigenteDe:'' });
   function lineasUO(uo){
