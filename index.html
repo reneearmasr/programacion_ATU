@@ -180,6 +180,9 @@ table.g tr.prop td.lin{background:var(--edit)}
 table.g td.ref{vertical-align:middle;border-right:1px solid var(--line)}
 table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 .diff-up{color:var(--ok)} .diff-dn{color:var(--bad)}
+.mefx{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;font-family:var(--mono);white-space:nowrap}
+.mefx b{font-weight:600}
+.chip.mef{background:#7A5A00}
 .decide{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px}
 .decide textarea{min-height:60px;border:1px solid var(--line);border-radius:5px;padding:8px 10px;background:var(--surface);resize:vertical}
 
@@ -564,6 +567,13 @@ function propuesta(L){
   const e = S.edits[L.id], ini = INI();
   return MES.map((_, i) => i < ini ? cerrado(L, i) : (e ? e.m[i] : L.po[i]));
 }
+/** Inversiones con meta MEF (trimestral): lo que se programa es el ajuste; incremento/caída = ajuste − meta MEF */
+const tieneMef = L => !!(L && L.mef);
+function mefTxt(L, i, v){
+  if (!tieneMef(L)) return '';
+  const me = +L.mef[i] || 0, x = r2(v - me);
+  return `MEF ${fmt(me)}${Math.abs(x) > .5 ? ` · <b class="${x > 0 ? 'diff-up' : 'diff-dn'}">${x > 0 ? 'Incr. +' : 'Caída −'}${fmt(Math.abs(x))}</b>` : ''}`;
+}
 function descr(L){ const e = S.edits[L.id]; return e ? e.d : (L.dsc || E12()); }
 /** Saldo declarado: parte del PIM que la unidad declara que no ejecutará al cierre del ejercicio */
 function sdVal(L){ const e = S.edits[L.id]; return e && e.sd != null ? +e.sd || 0 : (+L.sd || 0); }
@@ -591,7 +601,7 @@ const genericaDe = cl => ({'2.1':'Personal y obligaciones sociales','2.2':'Pensi
 function nuevaLinea(sf, cl, fu){
   const ref = S.lineas.find(l => l.sf == sf && !l.nueva) || S.lineas.find(l => l.sf == sf);
   return Object.assign({}, ref, { id: idNueva(sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado',
-    pim: 0, ce: 0, co: 0, dva: 0, po: Z12(), poOrig: Z12(), dv: Z12(), dsc: E12(), sd: 0, vigenteDe: '' });
+    pim: 0, ce: 0, co: 0, dva: 0, po: Z12(), poOrig: Z12(), dv: Z12(), dsc: E12(), sd: 0, vigenteDe: '', mef: ref && ref.mef ? Z12() : null });
 }
 /** SEC_FUNC de la UO, en orden, con sus líneas */
 function grupos(lineas){
@@ -701,7 +711,7 @@ function bannerEstado(){
   const e = S.envio, c = S.config;
   if (c.esActivo === false) return bannerAnio();
   if (!c.abierto) return `<div class="banner warn"><b>El proceso está cerrado.</b> Puedes consultar la programación, pero no registrar cambios.</div>`;
-  if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.</div>`;
+  if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.${S.lineas.some(tieneMef) ? ' En las <b>inversiones con META MEF</b>, el monto de cada mes es el <b>ajuste</b> a la meta MEF trimestral: debajo verás la meta MEF y el incremento o caída que resulta.' : ''}</div>`;
   if (e.estado === 'ENVIADO') return `<div class="banner warn"><b>Pedido enviado a OPP el ${esc(e.enviado)}.</b> Queda bloqueado hasta que OPP lo apruebe u observe.</div>`;
   if (e.estado === 'OBSERVADO') return `<div class="banner bad"><b>OPP observó el pedido</b> (${esc(e.revisor)}, ${esc(e.fechaRev)}). Corrige y vuelve a enviar.<p>${esc(e.comentario)}</p></div>`;
   if (e.estado === 'BORRADOR') return `<div class="banner info"><b>Borrador guardado.</b> OPP todavía no lo ve; envíalo cuando esté completo.</div>`;
@@ -744,14 +754,14 @@ function pintarTabla(){
     vis.forEach(L => {
       const p = propuesta(L), d = descr(L), mod = modificada(L), sm = sdMod(L);
       const nm = String(L.cl).split('-'); const cod = nm.shift(); const nom = nm.join('-');
-      h += `<tr data-id="${L.id}" class="${mod ? 'mod' : ''}"><td class="lin"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}</div><div class="ln">${esc(cap(nom))}</div>
+      h += `<tr data-id="${L.id}" class="${mod ? 'mod' : ''}"><td class="lin"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}${tieneMef(L) ? ' <span class="chip mef" title="Inversión con meta MEF: el monto de cada mes es el ajuste (reprogramación) a la meta MEF">META MEF</span>' : ''}</div><div class="ln">${esc(cap(nom))}</div>
         <div class="meta">${esc([L.nueva ? 'Sin PIM: requiere modificación presupuestal' : L.c2, abrev(L.fu)].filter(Boolean).join(' · '))}</div></td>
         <td class="num">${fmt(L.pim)}</td>`;
       if (ini > 0) h += ver ? p.slice(0, ini).map(v => `<td class="num closed">${fmt(v)}</td>`).join('') : `<td class="num closed">${fmt(p.slice(0, ini).reduce((a,b)=>a+b,0))}</td>`;
       for (let i = ini; i < 12; i++){
         const m = Math.abs(p[i] - L.po[i]) > 0.005;
         const falta = S.marcar && S.config.exigirDetalle && (montoMod(L) || txtMod(L)) && p[i] > 0 && !String(d[i] || '').trim();
-        h += `<td><input class="cell ${m?'mod':''}" id="c_${L.id}_${i}" data-i="${i}" inputmode="decimal" value="${fmt2(p[i])}" ${ed?'':'disabled'} aria-label="${esc(nom)} ${MES[i]}">${m ? `<span class="vig">vig. ${fmt(L.po[i])}</span>` : ''}</td>
+        h += `<td><input class="cell ${m?'mod':''}" id="c_${L.id}_${i}" data-i="${i}" inputmode="decimal" value="${fmt2(p[i])}" ${ed?'':'disabled'} aria-label="${esc(nom)} ${MES[i]}">${m ? `<span class="vig">vig. ${fmt(L.po[i])}</span>` : ''}${tieneMef(L) ? `<span class="mefx" id="mx_${L.id}_${i}">${mefTxt(L, i, p[i])}</span>` : ''}</td>
           <td class="l"><textarea class="dsc ${falta ? 'falta' : ''}" id="d_${L.id}_${i}" data-d="${i}" rows="2" maxlength="300" ${ed?'':'disabled'} placeholder="${p[i] > 0 ? 'Detalle de ' + MES[i] : '—'}" aria-label="Detalle de ${MES[i]}: ${esc(nom)}">${esc(d[i] || '')}</textarea></td>`;
       }
       h += `<td class="num tot"></td><td class="num sal"></td>
@@ -843,7 +853,8 @@ function editar(id, i, v, inp){
   const L = S.lineas.find(l => l.id === id);
   asegurarEdit(L).m[i] = r2(v);
   if (inp){ marcaVig(inp, Math.abs(S.edits[id].m[i] - L.po[i]) > 0.005, 'vig. ' + fmt(L.po[i]));
-    const t = document.getElementById(`d_${id}_${i}`); if (t) t.placeholder = v > 0 ? 'Detalle de ' + MES[i] : '—'; }
+    const t = document.getElementById(`d_${id}_${i}`); if (t) t.placeholder = v > 0 ? 'Detalle de ' + MES[i] : '—';
+    const mx = document.getElementById(`mx_${id}_${i}`); if (mx) mx.innerHTML = mefTxt(L, i, S.edits[id].m[i]); }
   refrescarTodo(L);
 }
 function editarSd(id, v, inp){
@@ -939,7 +950,20 @@ function pintarKPIs(){
     <div class="kpi"><small>POI vigente anual</small><b>${fmtM(vig)}</b><i>programación aprobada</i></div>
     <div class="kpi ${mods ? 'warn' : ''}"><small>Propuesta anual</small><b>${fmtM(prop)}</b><i>${mods} clasificadores modificados${nuevos ? ` (${nuevos} nuevos)` : ''} · ${fmtM(mov)} movidos</i></div>
     <div class="kpi ${sobre ? 'bad' : sal > 1 ? 'warn' : 'ok'}"><small>Saldo PIM sin programar</small><b>${fmtM(sal)}</b><i>${sobre ? sobre + ' SEC_FUNC superan su PIM' : sal > 1 ? 'aún por programar' : 'cuadra con el PIM'}</i></div>
-    <div class="kpi ${sd > 0 ? 'warn' : ''}"><small>Saldo declarado</small><b>${fmtM(sd)}</b><i>no se ejecutará al cierre · ${pim ? (sd/pim*100).toFixed(1) : 0}% del PIM</i></div>`;
+    <div class="kpi ${sd > 0 ? 'warn' : ''}"><small>Saldo declarado</small><b>${fmtM(sd)}</b><i>no se ejecutará al cierre · ${pim ? (sd/pim*100).toFixed(1) : 0}% del PIM</i></div>${kpiMef(S.lineas.map(L => ({ mef: L.mef, m: propuesta(L) })), ini)}`;
+}
+/** KPI de inversiones con meta MEF: meta MEF de los meses abiertos, ajuste propuesto, incrementos y caídas */
+function mefSum(filas, ini){
+  let me = 0, aj = 0, inc = 0, cai = 0, n = 0;
+  filas.forEach(f => { if (!f.mef) return; n++;
+    for (let i = ini; i < 12; i++){ const x = (+f.m[i] || 0) - (+f.mef[i] || 0); me += +f.mef[i] || 0; aj += +f.m[i] || 0; if (x > 0) inc += x; else cai -= x; } });
+  return { me, aj, inc, cai, n };
+}
+function kpiMef(filas, ini){
+  const { me, aj, inc, cai, n } = mefSum(filas, ini);
+  if (!n) return '';
+  const ms = ini < 12 ? `${MES[ini]}–Dic` : '';
+  return `<div class="kpi ${Math.abs(aj - me) > 1 ? 'warn' : ''}"><small>Inversiones · meta MEF ${ms}</small><b>${fmtM(me)}</b><i>Ajuste ${fmtM(aj)} · <span class="diff-up">+${fmtM(inc)}</span> · <span class="diff-dn">−${fmtM(cai)}</span></i></div>`;
 }
 
 async function guardar(enviar){
@@ -1070,11 +1094,11 @@ function detalleEnvio(){
       tPim += +L.pim || 0; tEj += ej; tSdV += sdV; tSdP += sdP;
       for (let i = ini; i < 12; i++){ const x = p[i] - v[i]; tv += v[i]; tp += p[i]; if (x > 0) sube += x; else baja -= x; }
       const tt = p.reduce((a,b)=>a+b,0);
-      rows += `<tr><td class="lin" rowspan="2"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}</div><div class="ln">${esc(cap(nm.join('-')))}</div><div class="meta">${esc(abrev(L.fu))}${L.nueva ? ' · requiere modificación presupuestal' : ''}</div>
+      rows += `<tr><td class="lin" rowspan="2"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}${tieneMef(L) ? ' <span class="chip mef">META MEF</span>' : ''}</div><div class="ln">${esc(cap(nm.join('-')))}</div><div class="meta">${esc(abrev(L.fu))}${L.nueva ? ' · requiere modificación presupuestal' : ''}</div>
           ${L.just ? `<div class="meta" style="color:var(--ink);margin-top:6px"><b>Justificación:</b> ${esc(L.just)}</div>` : ''}</td>
         <td class="num ref" rowspan="2">${fmt(L.pim)}</td><td class="num ref ej" rowspan="2">${fmt(ej)}</td>
         <td class="l" style="color:var(--muted)">Vigente</td>${MES.slice(ini).map((_, k) => `<td class="num det">${fmt(v[ini+k])}${dv[ini+k] ? `<span class="dtx">${esc(dv[ini+k])}</span>` : ''}</td>`).join('')}<td class="num">${fmt(MES.reduce((a,_,i)=>a+(i<ini?cerrado(L,i):v[i]),0))}</td><td class="num sdc">${fmt(sdV)}</td></tr>
-        <tr class="prop"><td class="l"><b>Propuesto</b></td>${MES.slice(ini).map((_, k) => { const i = ini+k, x = p[i]-v[i]; return `<td class="num det">${fmt(p[i])}${Math.abs(x) > .5 ? `<span class="vig ${x>0?'diff-up':'diff-dn'}">${x>0?'+':''}${fmt(x)}</span>` : ''}${d[i] ? `<span class="dtx">${esc(d[i])}</span>` : ''}</td>`; }).join('')}
+        <tr class="prop"><td class="l"><b>Propuesto</b></td>${MES.slice(ini).map((_, k) => { const i = ini+k, x = p[i]-v[i]; return `<td class="num det">${fmt(p[i])}${Math.abs(x) > .5 ? `<span class="vig ${x>0?'diff-up':'diff-dn'}">${x>0?'+':''}${fmt(x)}</span>` : ''}${tieneMef(L) ? `<span class="mefx">${mefTxt(L, i, p[i])}</span>` : ''}${d[i] ? `<span class="dtx">${esc(d[i])}</span>` : ''}</td>`; }).join('')}
         <td class="num">${fmt(tt)}</td><td class="num sdc"><b>${fmt(sdP)}</b>${Math.abs(sdX) > .5 ? `<span class="vig ${sdX>0?'diff-dn':'diff-up'}">${sdX>0?'+':''}${fmt(sdX)}</span>` : ''}</td></tr>`;
     });
   });
@@ -1088,6 +1112,7 @@ function detalleEnvio(){
       <div><small>Aumentos ${MES[ini]}–Dic</small><span class="num diff-up">+${fmt(sube)}</span></div>
       <div><small>Reducciones ${MES[ini]}–Dic</small><span class="num diff-dn">${baja > .5 ? '−' : ''}${fmt(baja)}</span></div>
       <div><small>Efecto neto</small><span class="num">${fmt(tp - tv)}</span></div>
+      ${(() => { const k = mefSum(lineas.map(L => ({ mef: L.mef, m: L.propuesto })), ini); return k.n ? `<div><small>Inversiones · meta MEF ${MES[ini]}–Dic</small><span class="num">${fmt(k.me)} → ajuste ${fmt(k.aj)} <span class="diff-up">+${fmt(k.inc)}</span> <span class="diff-dn">−${fmt(k.cai)}</span></span></div>` : ''; })()}
       <div><small>Saldo declarado</small><span class="num" style="color:var(--warn)">${fmt(tSdP)}${Math.abs(tSdP - tSdV) > .5 ? ` <span style="color:var(--muted)">(vig. ${fmt(tSdV)})</span>` : ''}</span></div>
     </div>
     <div class="banner info" style="color:var(--ink)"><b style="color:var(--accent)">Justificación general</b><p>${esc(e.just || '—')}</p></div>
@@ -1518,6 +1543,7 @@ function pintarConsolidado(){
       <div class="kpi ${T.pim - T.ej - prog(T) < -1 ? 'bad' : ''}"><small>Saldo PIM sin programar</small><b>${fmtM(T.pim - T.ej - prog(T))}</b><i>PIM − ejecución − programado</i></div>
       <div class="kpi ${T.sd > 0 ? 'warn' : ''}"><small>Saldo declarado</small><b>${fmtM(T.sd)}</b><i>no se ejecutará al cierre</i></div>
       <div class="kpi ${T.mod ? 'warn' : ''}"><small>Modificados por las áreas</small><b>${T.mod}</b><i>clasificadores con cambios</i></div>
+      ${kpiMef(filas.map(r => ({ mef: r.mef, m: consProg(r).m })), ini)}
     </div>
     <section class="panel"><div class="tbl-wrap" style="max-height:66vh;overflow:auto"><table class="g cons">
       <thead><tr><th class="lin">${esc(nombreDim)}</th><th>PIM</th><th>Ejecución<br><span class="thn">${MES[0]}–${MES[ini - 1] || ''}</span></th>${meses.map(m => `<th class="mes-edit">${m}<br><span class="thn">programado</span></th>`).join('')}<th class="sd-h">Saldo<br>declarado</th></tr></thead>
@@ -1592,10 +1618,17 @@ async function descargarExcel(){
   const D = S.cons.data, filas = consFiltradas().slice().sort((a, b) => a.sf - b.sf || clCod(a.cl).localeCompare(clCod(b.cl)) || String(a.fu).localeCompare(String(b.fu)));
   if (!filas.length){ toast('No hay clasificadores con esos filtros.'); return; }
   const ver = VERSIONES.find(v => v.k === S.cons.ver).n;
-  const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(['Total anual','Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']);
+  // Inversiones con meta MEF: por cada mes abierto, meta MEF, incremento, caída y ajuste (= lo programado), como en el Excel del SIAF
+  const hayMef = filas.some(r => r.mef), mAb = MES.map((m, i) => i).filter(i => i >= D.ini);
+  const MESL = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'], MESC = MES.map(m => m.toUpperCase().replace('SEP', 'SET'));
+  const cabMef = hayMef ? ['Tipo'].concat(...mAb.map(i => [MESL[i] + ' MEF', 'INCRE. ' + MESC[i], 'CAIDA ' + MESC[i], MESC[i] + ' AJUST'])) : [];
+  const r2x = v => Math.round(v * 100) / 100;
+  const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(['Total anual','Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']).concat(cabMef);
   const cuerpo = filas.map(r => { const P = consProg(r), tot = P.m.reduce((a, b) => a + b, 0);
+    const mef = !hayMef ? [] : [r.ti || ''].concat(...mAb.map(i => { if (!r.mef) return ['', '', '', ''];
+      const me = +r.mef[i] || 0, aj = +P.m[i] || 0, x = aj - me; return [r2x(me), r2x(Math.max(0, x)), r2x(Math.max(0, -x)), r2x(aj)]; }));
     return [pad4(r.sf), r.cl, r.fu].concat(P.m.map(v => Math.round(v * 100) / 100)).concat([Math.round(tot * 100) / 100, +P.sd || 0, r.uo, r.og, r.c2,
-      P.mod ? (P.est === 'ENVIADO' ? 'Propuesta enviada a OPP' : 'Propuesta en ' + String(P.est).toLowerCase()) : (P.est === 'APROBADO' ? 'Aprobado por OPP' : 'POI inicial')]); });
+      P.mod ? (P.est === 'ENVIADO' ? 'Propuesta enviada a OPP' : 'Propuesta en ' + String(P.est).toLowerCase()) : (P.est === 'APROBADO' ? 'Aprobado por OPP' : 'POI inicial')]).concat(mef); });
   const hoy = new Date(), p2 = n => String(n).padStart(2, '0');
   const nombre = `Programacion_${D.anio}_${S.cons.ver === 'vig' ? 'vigente' : S.cons.ver === 'env' ? 'vigente_mas_enviados' : 'con_borradores'}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}`;
   const filt = DIMS.filter(d => S.cons.f[d.k]).map(d => { const r = filas.find(x => consClave(d.k, x) === S.cons.f[d.k]); return [d.n, r ? consEtq(d.k, r) : S.cons.f[d.k]]; });
@@ -1604,8 +1637,8 @@ async function descargarExcel(){
     ['Generado', `${p2(hoy.getDate())}/${p2(hoy.getMonth() + 1)}/${hoy.getFullYear()} ${p2(hoy.getHours())}:${p2(hoy.getMinutes())}`], [], ['Filtros aplicados']].concat(filt.length ? filt : [['(ninguno)']]);
   try {
     const blob = crearXlsx([
-      { nombre:'Programación', filas:[cab].concat(cuerpo), cabecera:true, numDesde:3, numHasta:16, congelar:{c:3, r:1}, filtro:true,
-        anchos:[10, 50, 30].concat(MES.map(() => 14)).concat([16, 15, 12, 9, 30, 24]) },
+      { nombre:'Programación', filas:[cab].concat(cuerpo), cabecera:true, numDesde:3, numHasta:cab.length, congelar:{c:3, r:1}, filtro:true,
+        anchos:[10, 50, 30].concat(MES.map(() => 14)).concat([16, 15, 12, 9, 30, 24]).concat(cabMef.map((_, k) => k ? 14 : 12)) },
       { nombre:'Parámetros', filas:par, titulos:[0, 9], anchos:[32, 70] } ]);
     bajarArchivo(blob, nombre + '.xlsx');
     toast(`Excel descargado: ${cuerpo.length} clasificadores.`);
@@ -1630,7 +1663,7 @@ function iniciarDemo(){
   const hoy = () => { const d = new Date(); const p = n => String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   const ses = t => { const s = sesiones[String(t).split('|')[0]]; if (!s) throw new Error('SESION_EXPIRADA'); return s; };
   const activo = uo => envios.filter(e => e.uo === uo && e.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(e.estado)).pop() || null;
-  const nueva = (ref, cl, fu) => Object.assign({}, ref, { id: idNueva(ref.sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado', pim:0, ce:0, co:0, dva:0, po:Z12(), poOrig:Z12(), dv:Z12(), dsc:E12(), sd:0, vigenteDe:'' });
+  const nueva = (ref, cl, fu) => Object.assign({}, ref, { id: idNueva(ref.sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado', pim:0, ce:0, co:0, dva:0, po:Z12(), poOrig:Z12(), dv:Z12(), dsc:E12(), sd:0, vigenteDe:'', mef: ref.mef ? Z12() : null });
   function lineasUO(uo){
     const propias = base.filter(b => b.uo === uo);
     const out = propias.map(b => { const v = vig[b.id] || vig[idNueva(b.sf, b.cl, b.fu)]; return Object.assign({}, b, { po: v ? v.m : b.po, poOrig: b.po, dsc: v ? v.d : E12(), sd: v ? v.sd : 0, vigenteDe: v ? v.envio : '' }); });
@@ -1738,7 +1771,7 @@ function iniciarDemo(){
         const e = envios.filter(x => x.uo === u.uo && x.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(x.estado)).pop();
         const pend = {}; if (e) (detalle[e.id] || []).forEach(d => { pend[d.id] = d; if (!porId[d.id]){ const ref = base.find(b => b.uo === u.uo && b.sf == d.sf); if (ref){ const N = nueva(ref, d.cl, d.fu); porId[N.id] = N; ls.push(N); } } });
         ls.forEach(L => { const p = pend[L.id];
-          filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
+          filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', mef:L.mef || null, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
             v: MES.map((_, i) => i < ini ? L.dv[i] : L.po[i]), sd:+L.sd || 0, ap:L.vigenteDe ? 1 : 0, nv:L.nueva ? 1 : 0,
             p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '' }); });
       });
