@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230B2A4A'/%3E%3Cpath d='M7 18V11M12 18V6M17 18v-5' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
 <script>window.API_URL = "https://script.google.com/macros/s/AKfycbx3eLvFWDK4exL8VK8PkChSjzyitK3HBNpUtq2oOROc-HaHdMHtn9YBjIBIi-z3ro4r/exec";</script>
-<title>Programación y Modificación Presupuestal · ATU</title>
+<title>Programación y Modificación de Inversiones · ATU</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -382,7 +382,7 @@ tfoot td,tfoot td.lin{background:var(--surface2)}
   <div class="wrap">
     <div class="brand">
       <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></div>
-      <div class="bt"><b>Programación y Modificación Presupuestal</b><span>Autoridad de Transporte Urbano para Lima y Callao · Oficina de Planeamiento y Presupuesto</span></div>
+      <div class="bt"><b>Programación y Modificación de Inversiones</b><span>Autoridad de Transporte Urbano para Lima y Callao · Oficina de Planeamiento y Presupuesto</span></div>
     </div>
     <div class="who" id="who" hidden></div>
   </div>
@@ -476,10 +476,10 @@ function pintarLogin(msg){
   <div class="login-wrap">
   <section class="login-hero">
     <div class="lh-k">ATU · Oficina de Planeamiento y Presupuesto</div>
-    <h1>Programación y Modificación Presupuestal</h1>
-    <p>Registra la programación mensual de la meta financiera de tu unidad y solicita notas de modificación presupuestal en línea, con la revisión de OPP.</p>
+    <h1>Programación y Modificación de Inversiones</h1>
+    <p>Registra la programación mensual de la meta MEF de tu unidad y solicita la reprogramación interna, donde se evidencien las caídas y/o incrementos.</p>
     <ul>
-      <li><b>Programación y reprogramación</b><span>por SEC_FUNC y clasificador de gasto, con el detalle de cada mes</span></li>
+      <li><b>Programación y reprogramación</b><span>por SEC_FUNC y clasificador de gasto: meta MEF, ajuste, caídas e incrementos de cada mes</span></li>
       <li><b>Nota de modificación presupuestal</b><span>créditos y anulaciones con el formato del Anexo N° 02</span></li>
       <li><b>Revisión de OPP</b><span>aprobación u observación con trazabilidad</span></li>
     </ul>
@@ -487,11 +487,11 @@ function pintarLogin(msg){
   <form class="login" id="fLogin" autocomplete="on">
     <h2>Ingresar</h2>
     <p>Usa el usuario y la clave que OPP asignó a tu unidad orgánica.</p>
-    <label class="f" for="u">Usuario<input class="inp" id="u" name="u" autocomplete="username" required placeholder="p. ej. sstr"></label>
+    <label class="f" for="u">Usuario<input class="inp" id="u" name="u" autocomplete="username" required placeholder="p. ej. sitf"></label>
     <label class="f" for="c">Clave<input class="inp" id="c" name="c" type="password" autocomplete="current-password" required></label>
     ${msg ? `<div class="banner bad">${esc(msg)}</div>` : ''}
     <button class="btn primary" type="submit">Ingresar</button>
-    ${REAL ? '' : `<div class="hint">Demostración: usuario <code>sstr</code> (o cualquier sigla de unidad, p. ej. <code>uti</code>, <code>sapli</code>) o <code>opp</code> para la vista de revisión. Clave <code>demo</code>.</div>`}
+    ${REAL ? '' : `<div class="hint">Demostración: usuario <code>sitf</code> (o cualquier sigla de unidad con inversiones, p. ej. <code>sapli</code>, <code>dsp</code>) o <code>opp</code> para la vista de revisión. Clave <code>demo</code>.</div>`}
   </form>
   </div>`;
   $('#fLogin').addEventListener('submit', async ev => {
@@ -523,6 +523,7 @@ function pintarCabecera(){
   $('#stripIn').innerHTML = `
     <label class="sc sc-anio ${c.esActivo === false ? 'off' : ''}"><i>Año fiscal</i><select id="selAnio" aria-label="Año fiscal" ${anios.length > 1 ? '' : 'disabled'}>${anios.map(a => `<option value="${esc(a)}" ${String(a) === String(c.anio) ? 'selected' : ''}>${esc(a)}${String(a) === String(c.activo || c.anio) ? ' · activo' : ' · consulta'}</option>`).join('')}</select></label>
     <span class="sc"><i>Proceso</i><b>${esc(c.proceso)}</b></span>
+    ${c.soloInv ? `<span class="sc"><i>Ámbito</i><b>Inversiones</b></span>` : ''}
     ${c.esActivo === false ? `<span class="sc off"><i>Modo</i><b>solo consulta</b></span>` : `<span class="sc"><i>Meses editables</i><b>${MES[ini-1]}–Dic ${esc(c.anio)}</b></span>`}
     ${c.tipo === 'REPROGRAMACION' && ini > 1 ? `<span class="sc"><i>${MES[0]}–${MES[ini-2]}</i><b>devengado real</b></span>` : ''}
     <span class="sc"><i>Base SIAF</i><b>corte ${esc(c.fechaCorte)}</b></span>
@@ -1632,7 +1633,7 @@ async function descargarExcel(){
   const hoy = new Date(), p2 = n => String(n).padStart(2, '0');
   const nombre = `Programacion_${D.anio}_${S.cons.ver === 'vig' ? 'vigente' : S.cons.ver === 'env' ? 'vigente_mas_enviados' : 'con_borradores'}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}`;
   const filt = DIMS.filter(d => S.cons.f[d.k]).map(d => { const r = filas.find(x => consClave(d.k, x) === S.cons.f[d.k]); return [d.n, r ? consEtq(d.k, r) : S.cons.f[d.k]]; });
-  const par = [['Programación y Modificación Presupuestal · ATU'], [], ['Año fiscal', D.anio], ['Proceso', D.proceso], ['Base SIAF (corte)', D.corte], ['Versión', ver],
+  const par = [['Programación y Modificación de Inversiones · ATU'], [], ['Año fiscal', D.anio], ['Proceso', D.proceso], ['Ámbito', S.config && S.config.soloInv ? 'Solo inversiones' : 'Inversiones y actividades'], ['Base SIAF (corte)', D.corte], ['Versión', ver],
     ['Solo modificados por las áreas', S.cons.soloMod ? 'Sí' : 'No'], ['Clasificadores', cuerpo.length],
     ['Generado', `${p2(hoy.getDate())}/${p2(hoy.getMonth() + 1)}/${hoy.getFullYear()} ${p2(hoy.getHours())}:${p2(hoy.getMinutes())}`], [], ['Filtros aplicados']].concat(filt.length ? filt : [['(ninguno)']]);
   try {
@@ -1653,7 +1654,8 @@ async function descargarExcel(){
 let MOCK = null;
 function iniciarDemo(){
   const D = window.DEMO; if (!D) return;
-  const base = D.base, cfg = D.config;
+  const cfg = Object.assign({ soloInv: true }, D.config);
+  const base = cfg.soloInv ? D.base.filter(b => b.ti === 'Inversiones' && (b.pim > 0 || b.dva > 0 || (b.mef && b.mef.some(Boolean)))) : D.base;
   base.forEach(b => { b.dsc = E12(); b.sd = 0; });
   const envios = [], detalle = {}, vig = {};
   const sesiones = {};
@@ -1702,10 +1704,10 @@ function iniciarDemo(){
       lineas: detalle[id].length, variacion: detalle[id].reduce((a, d) => { const L = base.find(b => b.id === d.id); let s = 0; for (let i = ini; i < 12; i++) s += Math.abs(d.m[i] - (L ? L.po[i] : 0)); return a + s; }, 0),
       revisor: com ? 'opp' : '', fechaRev: com ? '27/09/2026 09:05' : '', comentario: com || '' });
   }
-  ejemplo('UTI', 'ENVIADO', 4, 'Ejemplo: los pagos de licencias y soporte se mueven a diciembre porque la conformidad del servicio se emitirá al cierre del año.', '', true);
+  ejemplo('DSP', 'ENVIADO', 4, 'Ejemplo: la valorización de la obra se traslada a diciembre por ampliación de plazo aprobada.', '', true);
   ejemplo('SAPLI', 'ENVIADO', 3, 'Ejemplo: retraso en la suscripción de contratos de consultoría; se reprograma el devengado al último trimestre.');
-  ejemplo('OGRH', 'OBSERVADO', 2, 'Ejemplo: ajuste de planilla por incorporación de personal CAS.', 'Ejemplo: sustentar con el cuadro de altas del mes; el traslado a diciembre no coincide con el calendario de pagos de planilla.');
-  ejemplo('UA', 'BORRADOR', 2, '');
+  ejemplo('SITF', 'OBSERVADO', 2, 'Ejemplo: ajuste del cronograma de pagos del contrato de concesión.', 'Ejemplo: sustentar con el cronograma de pagos vigente; el incremento sobre la meta MEF de diciembre no está justificado.');
+  ejemplo('SEP', 'BORRADOR', 2, '');
 
   // Nota de modificación de ejemplo (SAPLI), con la misma forma que el Anexo remitido formalmente
   const notas = [];
@@ -1730,7 +1732,7 @@ function iniciarDemo(){
       let s;
       if (u === 'opp') s = { usuario:'opp', nombre:'Oficina de Planeamiento y Presupuesto', rol:'OPP', uos: uni.map(x => x.uo) };
       else { const x = uni.find(x => x.uo.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') === u);
-        if (!x) throw new Error('Usuario o clave incorrectos. Prueba con sstr, uti, sapli u opp.');
+        if (!x) throw new Error('Usuario o clave incorrectos. Prueba con sitf, sapli, dsp u opp.');
         s = { usuario:u, nombre: x.og + ' / ' + x.uo, rol:'AREA', uos:[x.uo] }; }
       const t = 'demo' + Math.random(); sesiones[t] = s;
       return { token:t, sesion:s, config:cfg, unidades: uni.filter(x => s.uos.includes(x.uo)) };
