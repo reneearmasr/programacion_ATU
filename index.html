@@ -277,7 +277,11 @@ table.g.cons thead tr:first-child th{top:0;height:34px;box-sizing:border-box} ta
 table.g.cons th.qg{text-align:center;color:var(--ink)} table.g.cons .qm{color:var(--muted)}
 .qt{border:1px solid var(--line);background:var(--surface);border-radius:4px;width:20px;height:20px;line-height:16px;padding:0;font-size:13px;cursor:pointer;color:var(--ink);vertical-align:middle}
 .qt:hover{background:var(--surface2)}
-table.g.cons tr.nv0 td,table.g.cons tr.nv0 td.lin{font-weight:600;background:color-mix(in srgb, var(--navy2) 9%, var(--surface))}
+table.g.cons tr.nv0 td,table.g.cons tr.nv0 td.lin{font-weight:700;background:var(--navy);color:#fff;border-top:2px solid var(--navy)}
+table.g.cons tr.nv0 .qt{background:transparent;color:#fff;border-color:rgba(255,255,255,.5)}
+table.g.cons tr.nv0 .pct-ok{color:#86EFAC} table.g.cons tr.nv0 .pct-md{color:#FCD34D} table.g.cons tr.nv0 .pct-bj{color:#FCA5A5}
+table.g.cons tr.nv1 td,table.g.cons tr.nv1 td.lin{background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+table.g.cons tr.nv1 td.lin{box-shadow:inset 3px 0 0 var(--accent)}
 table.g.cons tr.nv1 td.lin .ln{font-weight:500}
 .cons-arb{display:flex;gap:8px;margin:0 0 8px}
 table.g.cons td.lin .ln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px} .pct-ok{color:var(--ok)} .pct-md{color:var(--warn)} .pct-bj{color:var(--bad)}
@@ -377,7 +381,7 @@ main{padding-block:22px 64px;gap:18px}
 
 /* Tablas */
 table.g th{background:var(--surface2);font-size:10.5px;letter-spacing:.6px;padding:10px 8px}
-table.g tbody tr:not(.sfh):not(.pjh):not(.c2h):not(.just):not(.addrow):not(.prop):hover td{background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+table.g tbody tr:not(.sfh):not(.pjh):not(.c2h):not(.nv0):not(.nv1):not(.just):not(.addrow):not(.prop):hover td{background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
 table.g tr.sfh td{background:color-mix(in srgb,var(--accent) 7%,var(--surface));border-top:1px solid var(--line)}
 table.g tr.sfh td.lin{background:color-mix(in srgb,var(--accent) 7%,var(--surface));box-shadow:inset 3px 0 0 var(--accent)}
 tfoot td,tfoot td.lin{background:var(--surface2)}
