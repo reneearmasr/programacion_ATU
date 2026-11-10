@@ -264,6 +264,8 @@ table.g td.det{white-space:normal;min-width:130px;max-width:220px}
 @media (max-width:1000px){.cons-f{grid-template-columns:1fr 1fr}}
 @media (max-width:560px){.cons-f{grid-template-columns:1fr}}
 table.g.cons td.lin{min-width:320px;max-width:460px}
+table.g.cons .q0{border-left:2px solid var(--line)} table.g.cons .qd{background:var(--surface2)} table.g.cons th.qd,table.g.cons th.qp{color:var(--ink)}
+table.g.cons .qp{font-weight:600} .pct-ok{color:var(--ok)} .pct-md{color:var(--warn)} .pct-bj{color:var(--bad)}
 .topbar{position:fixed;left:0;right:0;top:0;height:3px;z-index:60;background:linear-gradient(90deg,transparent,var(--gold,#C9A227),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:tb 1s linear infinite}
 @keyframes tb{from{background-position:-40% 0}to{background-position:140% 0}}
 .loading{background:rgba(11,42,74,.06)}
@@ -1490,6 +1492,15 @@ async function abrirConsolidado(forzar){
   S.ver = 'consolidado'; pintarOPP();
 }
 /** Programación de una fila según la versión elegida */
+/** Meta MEF por trimestre: 3 meses de meta MEF + devengado del trimestre + % logrado (devengado ÷ meta MEF trimestral) */
+const TRIM = ['I', 'II', 'III', 'IV'];
+const pctLogro = (dv, me) => me > 0.5 ? dv / me * 100 : null;
+const pctCls = p => p == null ? '' : p >= 90 ? 'pct-ok' : p >= 60 ? 'pct-md' : 'pct-bj';
+const thTrim = () => TRIM.map((t, q) => [0, 1, 2].map(j => `<th class="${j ? '' : 'q0'}">${MES[q * 3 + j]}<br><span class="thn">meta MEF</span></th>`).join('')
+  + `<th class="qd">${t} trim.<br><span class="thn">devengado</span></th><th class="qd qp">${t} trim.<br><span class="thn">% logrado</span></th>`).join('');
+const tdTrim = x => TRIM.map((t, q) => { const me = x.mef.slice(q * 3, q * 3 + 3).reduce((a, b) => a + b, 0), dv = x.dv.slice(q * 3, q * 3 + 3).reduce((a, b) => a + b, 0), p = pctLogro(dv, me);
+  return [0, 1, 2].map(j => `<td class="num ${j ? '' : 'q0'}">${fmt(x.mef[q * 3 + j])}</td>`).join('')
+    + `<td class="num qd">${fmt(dv)}</td><td class="num qd qp ${pctCls(p)}">${p == null ? '—' : p.toFixed(1) + '%'}</td>`; }).join('');
 function consProg(r){
   const usa = r.p && (S.cons.ver === 'all' || (S.cons.ver === 'env' && r.pe === 'ENVIADO'));
   return usa ? { m: r.p, sd: r.psd, mod: true, est: r.pe } : { m: r.v, sd: r.sd, mod: false, est: r.ap ? 'APROBADO' : '' };
@@ -1514,12 +1525,14 @@ function pintarConsolidado(){
   };
   // Agrupación (1ra columna)
   const grupos = {}, orden = [];
-  let T = { pim:0, ej:0, m:new Array(12).fill(0), sd:0, n:0, mod:0 };
+  const Z = () => new Array(12).fill(0);
+  let T = { pim:0, ej:0, m:Z(), sd:0, n:0, mod:0, mef:Z(), dv:Z() };
   filas.forEach(r => {
     const k = consClave(g, r), P = consProg(r);
     let G = grupos[k];
-    if (!G){ G = grupos[k] = { k, etq: consEtq(g, r), pim:0, ej:0, m:new Array(12).fill(0), sd:0, n:0, mod:0 }; orden.push(k); }
-    [G, T].forEach(x => { x.pim += r.pim; x.ej += r.ej; x.sd += +P.sd || 0; x.n++; if (P.mod) x.mod++; for (let i = ini; i < 12; i++) x.m[i] += P.m[i]; });
+    if (!G){ G = grupos[k] = { k, etq: consEtq(g, r), pim:0, ej:0, m:Z(), sd:0, n:0, mod:0, mef:Z(), dv:Z() }; orden.push(k); }
+    [G, T].forEach(x => { x.pim += r.pim; x.ej += r.ej; x.sd += +P.sd || 0; x.n++; if (P.mod) x.mod++; for (let i = ini; i < 12; i++) x.m[i] += P.m[i];
+      for (let i = 0; i < 12; i++){ x.mef[i] += r.mef ? +r.mef[i] || 0 : 0; x.dv[i] += r.dv ? +r.dv[i] || 0 : (i < ini ? +r.v[i] || 0 : 0); } });
   });
   orden.sort((a, b) => g === 'sf' ? a - b : String(grupos[a].etq).localeCompare(String(grupos[b].etq)));
   const meses = MES.slice(ini);
@@ -1547,13 +1560,14 @@ function pintarConsolidado(){
       ${kpiMef(filas.map(r => ({ mef: r.mef, m: consProg(r).m })), ini)}
     </div>
     <section class="panel"><div class="tbl-wrap" style="max-height:66vh;overflow:auto"><table class="g cons">
-      <thead><tr><th class="lin">${esc(nombreDim)}</th><th>PIM</th><th>Ejecución<br><span class="thn">${MES[0]}–${MES[ini - 1] || ''}</span></th>${meses.map(m => `<th class="mes-edit">${m}<br><span class="thn">programado</span></th>`).join('')}<th class="sd-h">Saldo<br>declarado</th></tr></thead>
+      <thead><tr><th class="lin">${esc(nombreDim)}</th><th>PIM</th><th>Ejecución<br><span class="thn">${MES[0]}–${MES[ini - 1] || ''}</span></th>${thTrim()}${meses.map(m => `<th class="mes-edit">${m}<br><span class="thn">programado</span></th>`).join('')}<th class="sd-h">Saldo<br>declarado</th></tr></thead>
       <tbody>${orden.length ? orden.map(k => { const G = grupos[k]; return `<tr><td class="lin"><div class="ln">${esc(G.etq)}</div><div class="meta">${G.n} clasificador${G.n === 1 ? '' : 'es'}${G.mod ? ` · <span style="color:var(--warn)">${G.mod} modificado${G.mod === 1 ? '' : 's'}</span>` : ''}</div></td>
-        <td class="num">${fmt(G.pim)}</td><td class="num closed">${fmt(G.ej)}</td>${G.m.slice(ini).map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num sdc">${fmt(G.sd)}</td></tr>`; }).join('')
-        : `<tr><td class="l" colspan="${4 + meses.length}"><div class="empty">No hay clasificadores con esos filtros.</div></td></tr>`}</tbody>
-      <tfoot><tr><td class="lin">Total (${orden.length} ${esc(orden.length === 1 ? nombreDim.toLowerCase() : (DIMS.find(d => d.k === g) || {}).pl)})</td><td class="num">${fmt(T.pim)}</td><td class="num">${fmt(T.ej)}</td>${T.m.slice(ini).map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num sdc">${fmt(T.sd)}</td></tr></tfoot>
+        <td class="num">${fmt(G.pim)}</td><td class="num closed">${fmt(G.ej)}</td>${tdTrim(G)}${G.m.slice(ini).map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num sdc">${fmt(G.sd)}</td></tr>`; }).join('')
+        : `<tr><td class="l" colspan="${24 + meses.length}"><div class="empty">No hay clasificadores con esos filtros.</div></td></tr>`}</tbody>
+      <tfoot><tr><td class="lin">Total (${orden.length} ${esc(orden.length === 1 ? nombreDim.toLowerCase() : (DIMS.find(d => d.k === g) || {}).pl)})</td><td class="num">${fmt(T.pim)}</td><td class="num">${fmt(T.ej)}</td>${tdTrim(T)}${T.m.slice(ini).map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num sdc">${fmt(T.sd)}</td></tr></tfoot>
     </table></div></section>
-    <p class="meta">La versión «Vigente + pedidos enviados» muestra lo aprobado por OPP y, donde una unidad tiene un pedido enviado pendiente de revisión, su propuesta. El Excel descarga cada clasificador que cumple los filtros, con los 12 meses (${MES[0]}–${MES[ini - 1] || ''} = devengado).</p>`;
+    <p class="meta">La versión «Vigente + pedidos enviados» muestra lo aprobado por OPP y, donde una unidad tiene un pedido enviado pendiente de revisión, su propuesta. El Excel descarga cada clasificador que cumple los filtros, con los 12 meses (${MES[0]}–${MES[ini - 1] || ''} = devengado), y en la hoja «Meta MEF y avance» la meta MEF mensual con el devengado y el % logrado de cada trimestre.</p>
+    <p class="meta"><b>% logrado</b> = devengado del trimestre ÷ meta MEF del trimestre. En el trimestre en curso se cuenta el devengado registrado hasta la fecha de corte.</p>`;
   bindTabs();
   $('#cGrupo').onchange = e => { S.cons.grupo = e.target.value; pintarConsolidado(); };
   document.querySelectorAll('[data-cf]').forEach(s => s.onchange = () => { S.cons.f[s.dataset.cf] = s.value; pintarConsolidado(); });
@@ -1624,6 +1638,15 @@ async function descargarExcel(){
   const MESL = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'], MESC = MES.map(m => m.toUpperCase().replace('SEP', 'SET'));
   const cabMef = hayMef ? ['Tipo'].concat(...mAb.map(i => [MESL[i] + ' MEF', 'INCRE. ' + MESC[i], 'CAIDA ' + MESC[i], MESC[i] + ' AJUST'])) : [];
   const r2x = v => Math.round(v * 100) / 100;
+  // Hoja «Meta MEF y avance»: meta MEF de cada mes y, por trimestre, devengado y % logrado (devengado ÷ meta MEF trimestral)
+  const MESM = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+  const cabAv = ['SEC_FUNC','Clasificador','Fuente de financiamiento','Unidad orgánica','Órgano'].concat(...TRIM.map((t, q) =>
+    [MESM[q * 3] + ' MEF', MESM[q * 3 + 1] + ' MEF', MESM[q * 3 + 2] + ' MEF', t + ' TRIM. META MEF', t + ' TRIM. DEVENGADO', t + ' TRIM. % LOGRADO'])).concat(['META MEF ANUAL', 'DEVENGADO TOTAL', '% LOGRADO ANUAL']);
+  const cuerpoAv = filas.map(r => { const me = MES.map((_, i) => r.mef ? +r.mef[i] || 0 : 0), dv = MES.map((_, i) => r.dv ? +r.dv[i] || 0 : (i < D.ini ? +r.v[i] || 0 : 0));
+    const sm = (a, q) => a.slice(q * 3, q * 3 + 3).reduce((x, y) => x + y, 0), pc = (d, m) => { const p = pctLogro(d, m); return p == null ? '' : Math.round(p * 10) / 10; };
+    const tm = me.reduce((a, b) => a + b, 0), td = dv.reduce((a, b) => a + b, 0);
+    return [pad4(r.sf), r.cl, r.fu, r.uo, r.og].concat(...TRIM.map((t, q) => [me[q * 3], me[q * 3 + 1], me[q * 3 + 2], sm(me, q), sm(dv, q), pc(sm(dv, q), sm(me, q))].map(v => typeof v === 'number' ? Math.round(v * 100) / 100 : v)))
+      .concat([Math.round(tm * 100) / 100, Math.round(td * 100) / 100, pc(td, tm)]); });
   const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(['Total anual','Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']).concat(cabMef);
   const cuerpo = filas.map(r => { const P = consProg(r), tot = P.m.reduce((a, b) => a + b, 0);
     const mef = !hayMef ? [] : [r.ti || ''].concat(...mAb.map(i => { if (!r.mef) return ['', '', '', ''];
@@ -1640,6 +1663,8 @@ async function descargarExcel(){
     const blob = crearXlsx([
       { nombre:'Programación', filas:[cab].concat(cuerpo), cabecera:true, numDesde:3, numHasta:cab.length, congelar:{c:3, r:1}, filtro:true,
         anchos:[10, 50, 30].concat(MES.map(() => 14)).concat([16, 15, 12, 9, 30, 24]).concat(cabMef.map((_, k) => k ? 14 : 12)) },
+      { nombre:'Meta MEF y avance', filas:[cabAv].concat(cuerpoAv), cabecera:true, numDesde:5, numHasta:cabAv.length, congelar:{c:3, r:1}, filtro:true,
+        anchos:[10, 50, 30, 12, 9].concat(cabAv.slice(5).map(() => 14)) },
       { nombre:'Parámetros', filas:par, titulos:[0, 9], anchos:[32, 70] } ]);
     bajarArchivo(blob, nombre + '.xlsx');
     toast(`Excel descargado: ${cuerpo.length} clasificadores.`);
@@ -1773,7 +1798,7 @@ function iniciarDemo(){
         const e = envios.filter(x => x.uo === u.uo && x.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(x.estado)).pop();
         const pend = {}; if (e) (detalle[e.id] || []).forEach(d => { pend[d.id] = d; if (!porId[d.id]){ const ref = base.find(b => b.uo === u.uo && b.sf == d.sf); if (ref){ const N = nueva(ref, d.cl, d.fu); porId[N.id] = N; ls.push(N); } } });
         ls.forEach(L => { const p = pend[L.id];
-          filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', mef:L.mef || null, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
+          filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', mef:L.mef || null, dv:L.dv, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
             v: MES.map((_, i) => i < ini ? L.dv[i] : L.po[i]), sd:+L.sd || 0, ap:L.vigenteDe ? 1 : 0, nv:L.nueva ? 1 : 0,
             p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '' }); });
       });
