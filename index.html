@@ -197,6 +197,13 @@ table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 table.g tr.sfh td{background:var(--surface2);border-top:2px solid var(--line);vertical-align:middle}
 table.g tr.sfh td.lin{background:var(--surface2);padding-left:34px;position:sticky}
 table.g tr.sfh td.num{font-weight:600;color:var(--ink)}
+table.g tr.pjh td,table.g tr.pjh td.lin{background:var(--navy);color:#fff;border-top:2px solid var(--navy)}
+table.g tr.pjh td.num{font-weight:700;color:#fff}
+.pjk{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;opacity:.75}
+.pjn{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+table.g tr.c2h td,table.g tr.c2h td.lin{background:var(--warn-soft)}
+table.g tr.c2h td.lin{padding-left:34px} table.g tr.c2h td.num{font-weight:600}
+.c2n{font-weight:600}
 .sfk{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:500;letter-spacing:.3px}
 .sfn{font-weight:600;line-height:1.3}
 .tog{position:absolute;left:8px;top:10px;border:0;background:transparent;cursor:pointer;color:var(--muted);font-size:13px;width:20px;padding:0}
@@ -370,7 +377,7 @@ main{padding-block:22px 64px;gap:18px}
 
 /* Tablas */
 table.g th{background:var(--surface2);font-size:10.5px;letter-spacing:.6px;padding:10px 8px}
-table.g tbody tr:not(.sfh):not(.just):not(.addrow):not(.prop):hover td{background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+table.g tbody tr:not(.sfh):not(.pjh):not(.c2h):not(.just):not(.addrow):not(.prop):hover td{background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
 table.g tr.sfh td{background:color-mix(in srgb,var(--accent) 7%,var(--surface));border-top:1px solid var(--line)}
 table.g tr.sfh td.lin{background:color-mix(in srgb,var(--accent) 7%,var(--surface));box-shadow:inset 3px 0 0 var(--accent)}
 tfoot td,tfoot td.lin{background:var(--surface2)}
@@ -614,11 +621,15 @@ function nuevaLinea(sf, cl, fu){
   return Object.assign({}, ref, { id: idNueva(sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado',
     pim: 0, ce: 0, co: 0, dva: 0, po: Z12(), poOrig: Z12(), dv: Z12(), dsc: E12(), sd: 0, vigenteDe: '', mef: ref && ref.mef ? Z12() : null });
 }
-/** SEC_FUNC de la UO, en orden, con sus líneas */
+/** SEC_FUNC de la UO con sus líneas, en orden: Proyecto › SEC_FUNC › Concepto › Clasificador */
+const codProy = L => { const m = String(L && L.pp || '').match(/^\s*(\d+)/); return m ? +m[1] : 9e9; };
+const cmpTxt = (a, b) => String(a || '').localeCompare(String(b || ''), 'es', { numeric:true, sensitivity:'base' });
+const ordenLinea = (a, b) => (a.nueva - b.nueva) || cmpTxt(a.c2, b.c2) || cmpTxt(String(a.cl).split('-')[0], String(b.cl).split('-')[0]) || cmpTxt(a.fu, b.fu);
 function grupos(lineas){
   const g = {}, orden = [];
   lineas.forEach(L => { if (!g[L.sf]){ g[L.sf] = []; orden.push(L.sf); } g[L.sf].push(L); });
-  return orden.sort((a, b) => a - b).map(sf => ({ sf, L: g[sf], ref: g[sf].find(x => !x.nueva) || g[sf][0] }));
+  return orden.map(sf => ({ sf, L: g[sf].slice().sort(ordenLinea), ref: g[sf].find(x => !x.nueva) || g[sf][0] }))
+    .sort((a, b) => codProy(a.ref) - codProy(b.ref) || a.sf - b.sf);
 }
 function totSf(sf){
   let pim = 0, prog = 0, mod = false;
@@ -741,15 +752,20 @@ function pintarTabla(){
   const ini = INI(), ver = S.filtro.verCerrados, ed = editable();
   const nCols = 2 + (ini > 0 ? (ver ? ini : 1) : 0) + (12 - ini) * 2 + 4;
   const cerrH = ini > 0 ? (ver ? MES.slice(0, ini).map(m => `<th>${m}<br><span class="thn">dev.</span></th>`).join('') : `<th>Ejecutado<br>${MES[0]}–${MES[ini-1]}</th>`) : '';
-  let h = `<table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador de gasto</th><th>PIM</th>${cerrH}
+  let h = `<table class="g"><thead><tr><th class="lin">Proyecto › SEC_FUNC › concepto › clasificador</th><th>PIM</th>${cerrH}
     ${MES.slice(ini).map(m => `<th class="mes-edit">${m}<br><span class="thn">S/</span></th><th class="mes-edit l dsc-h">Detalle ${m}<br><span class="thn">¿Estado actual y a qué corresponde?</span></th>`).join('')}
     <th>Programación<br>anual</th><th>Saldo PIM sin<br>programar</th><th></th><th class="sd-h" title="Monto del PIM que la unidad declara que no ejecutará al cierre del ejercicio fiscal">Saldo<br>declarado</th></tr></thead><tbody>`;
   let visibles = [];
   const gs = grupos(S.lineas).filter(g => g.L.some(lineaVisible) || (S.agregando == g.sf));
   if (!gs.length) h += `<tr><td class="l" colspan="${nCols}"><div class="empty">No hay líneas con ese filtro.</div></td></tr>`;
+  let pjAnt = null;
   gs.forEach(g => {
     const R = g.ref, col = !!S.colapsados[g.sf];
     const vis = g.L.filter(lineaVisible); visibles = visibles.concat(vis);
+    const pj = String(R.pp || '');
+    if (pj !== pjAnt){ pjAnt = pj;
+      const pimPj = S.lineas.filter(L => String(L.pp || '') === pj).reduce((a, L) => a + L.pim, 0);
+      h += `<tr class="pjh"><td class="lin"><div class="pjk">Proyecto</div><div class="pjn" title="${esc(pj)}">${esc(pj ? codNom(pj) : 'Sin proyecto')}</div></td><td class="num">${fmt(pimPj)}</td><td colspan="${nCols - 2}"></td></tr>`; }
     h += `<tr class="sfh" data-sf="${g.sf}"><td class="lin"><button class="tog" data-tog="${g.sf}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Ocultar'} clasificadores">${col ? '▸' : '▾'}</button>
         <div class="sfk">SEC_FUNC ${pad4(g.sf)}${R.mt != null ? ' · Meta ' + esc(R.mt) : ''}</div>
         <div class="sfn">${esc(cap(sinCod(R.fi)))}</div>
@@ -762,11 +778,15 @@ function pintarTabla(){
       <td class="num sdc" data-k="sd"></td></tr>`;
     if (S.agregando == g.sf) h += filaAgregar(g, nCols);
     if (col) return;
+    let c2Ant = null;
     vis.forEach(L => {
+      const c2 = L.nueva ? 'Clasificadores agregados' : String(L.c2 || 'Sin concepto');
+      if (c2 !== c2Ant){ c2Ant = c2; const pimC = g.L.filter(x => (x.nueva ? 'Clasificadores agregados' : String(x.c2 || 'Sin concepto')) === c2).reduce((a, x) => a + x.pim, 0);
+        h += `<tr class="c2h"><td class="lin"><div class="c2n">${esc(c2)}</div></td><td class="num">${fmt(pimC)}</td><td colspan="${nCols - 2}"></td></tr>`; }
       const p = propuesta(L), d = descr(L), mod = modificada(L), sm = sdMod(L);
       const nm = String(L.cl).split('-'); const cod = nm.shift(); const nom = nm.join('-');
       h += `<tr data-id="${L.id}" class="${mod ? 'mod' : ''}"><td class="lin"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}${tieneMef(L) ? ' <span class="chip mef" title="Inversión con meta MEF: el monto de cada mes es el ajuste (reprogramación) a la meta MEF">META MEF</span>' : ''}</div><div class="ln">${esc(cap(nom))}</div>
-        <div class="meta">${esc([L.nueva ? 'Sin PIM: requiere modificación presupuestal' : L.c2, abrev(L.fu)].filter(Boolean).join(' · '))}</div></td>
+        <div class="meta">${esc([L.nueva ? 'Sin PIM: requiere modificación presupuestal' : '', abrev(L.fu)].filter(Boolean).join(' · '))}</div></td>
         <td class="num">${fmt(L.pim)}</td>`;
       if (ini > 0) h += ver ? p.slice(0, ini).map(v => `<td class="num closed">${fmt(v)}</td>`).join('') : `<td class="num closed">${fmt(p.slice(0, ini).reduce((a,b)=>a+b,0))}</td>`;
       for (let i = ini; i < 12; i++){
