@@ -180,6 +180,9 @@ table.g tr.prop td.lin{background:var(--edit)}
 table.g td.ref{vertical-align:middle;border-right:1px solid var(--line)}
 table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 .diff-up{color:var(--ok)} .diff-dn{color:var(--bad)}
+.mes-fut{background:color-mix(in srgb,#7C3AED 10%,var(--surface2)) !important;color:var(--ink) !important}
+td.fcol{background:color-mix(in srgb,#7C3AED 4%,var(--surface))} .fut0{border-left:2px solid #7C3AED !important}
+.kpi.fut{border-left:4px solid #7C3AED}
 .mefx{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;font-family:var(--mono);white-space:nowrap}
 .mefx b{font-weight:600}
 .chip.mef{background:#7A5A00}
@@ -597,24 +600,31 @@ function mefTxt(L, i, v){
   return `MEF ${fmt(me)}${Math.abs(x) > .5 ? ` · <b class="${x > 0 ? 'diff-up' : 'diff-dn'}">${x > 0 ? 'Incr. +' : 'Caída −'}${fmt(Math.abs(x))}</b>` : ''}`;
 }
 function descr(L){ const e = S.edits[L.id]; return e ? e.d : (L.dsc || E12()); }
+/** Trimestre siguiente (programación trimestral MEF), p. ej. Ene–Mar 2027: S.config.fut = {anio, trim, periodo, meses} */
+const FUT = () => (S.config && S.config.esActivo !== false && S.config.fut) || null;
+const Z3 = () => [0, 0, 0], E3 = () => ['', '', ''];
+function futVal(L){ const e = S.edits[L.id]; return e && e.f ? e.f : (L.f || Z3()); }
+function futDsc(L){ const e = S.edits[L.id]; return e && e.fd ? e.fd : (L.fd || E3()); }
+function futMod(L){ const e = S.edits[L.id]; if (!e || !e.f || !FUT()) return false; const v = L.f || Z3(); return e.f.some((x, k) => Math.abs(x - (+v[k] || 0)) > 0.005); }
+function futTxtMod(L){ const e = S.edits[L.id]; if (!e || !e.fd || !FUT()) return false; const v = L.fd || E3(); return e.fd.some((x, k) => String(x || '').trim() !== String(v[k] || '')); }
 /** Saldo declarado: parte del PIM que la unidad declara que no ejecutará al cierre del ejercicio */
 function sdVal(L){ const e = S.edits[L.id]; return e && e.sd != null ? +e.sd || 0 : (+L.sd || 0); }
 function sdMod(L){ const e = S.edits[L.id]; return !!e && e.sd != null && Math.abs((+e.sd || 0) - (+L.sd || 0)) > 0.005; }
 function montoMod(L){
   const e = S.edits[L.id]; if (!e) return false;
   for (let i = INI(); i < 12; i++) if (Math.abs(e.m[i] - L.po[i]) > 0.005) return true;
-  return false;
+  return futMod(L);
 }
 function txtMod(L){
   const e = S.edits[L.id]; if (!e) return false;
   const v = L.dsc || E12();
   for (let i = INI(); i < 12; i++) if (String(e.d[i] || '').trim() !== String(v[i] || '')) return true;
-  return false;
+  return futTxtMod(L);
 }
 /** Cambios que exigen justificación: montos o saldo declarado */
 function cambioReal(L){ return montoMod(L) || sdMod(L); }
 function modificada(L){ return montoMod(L) || sdMod(L) || txtMod(L); }
-function asegurarEdit(L){ if (!S.edits[L.id]) S.edits[L.id] = { m: propuesta(L), d: descr(L).slice(), sd: +L.sd || 0, just: '' }; return S.edits[L.id]; }
+function asegurarEdit(L){ if (!S.edits[L.id]) S.edits[L.id] = { m: propuesta(L), d: descr(L).slice(), sd: +L.sd || 0, just: '', f: futVal(L).slice(), fd: futDsc(L).slice() }; return S.edits[L.id]; }
 function editable(){
   const est = S.envio && S.envio.estado;
   return S.config.abierto && est !== 'ENVIADO';
@@ -623,7 +633,7 @@ const genericaDe = cl => ({'2.1':'Personal y obligaciones sociales','2.2':'Pensi
 function nuevaLinea(sf, cl, fu){
   const ref = S.lineas.find(l => l.sf == sf && !l.nueva) || S.lineas.find(l => l.sf == sf);
   return Object.assign({}, ref, { id: idNueva(sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado',
-    pim: 0, ce: 0, co: 0, dva: 0, po: Z12(), poOrig: Z12(), dv: Z12(), dsc: E12(), sd: 0, vigenteDe: '', mef: ref && ref.mef ? Z12() : null });
+    pim: 0, ce: 0, co: 0, dva: 0, po: Z12(), poOrig: Z12(), dv: Z12(), dsc: E12(), sd: 0, vigenteDe: '', mef: ref && ref.mef ? Z12() : null, f: Z3(), fd: E3() });
 }
 /** SEC_FUNC de la UO con sus líneas, en orden: Proyecto › SEC_FUNC › Concepto › Clasificador */
 const codProy = L => { const m = String(L && L.pp || '').match(/^\s*(\d+)/); return m ? +m[1] : 9e9; };
@@ -659,7 +669,7 @@ function cargarRespuesta(uo, r){
   Object.keys(r.detalle || {}).forEach(id => {
     const d = r.detalle[id];
     if (!S.lineas.find(l => l.id === id) && d.nueva) S.lineas.push(nuevaLinea(d.sf, d.cl, d.fu));
-    S.edits[id] = { m: d.m.slice(), d: (d.d || E12()).slice(), sd: +d.sd || 0, just: d.just || '' };
+    S.edits[id] = { m: d.m.slice(), d: (d.d || E12()).slice(), sd: +d.sd || 0, just: d.just || '', f: (d.f || Z3()).slice(), fd: (d.fd || E3()).slice() };
   });
   S.justGeneral = (r.envio && r.envio.just) || '';
 }
@@ -737,7 +747,7 @@ function bannerEstado(){
   const e = S.envio, c = S.config;
   if (c.esActivo === false) return bannerAnio();
   if (!c.abierto) return `<div class="banner warn"><b>El proceso está cerrado.</b> Puedes consultar la programación, pero no registrar cambios.</div>`;
-  if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, el estado actual y a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.${S.lineas.some(tieneMef) ? ' En las <b>inversiones con META MEF</b>, el monto de cada mes es el <b>ajuste</b> a la meta MEF trimestral: debajo verás la meta MEF y el incremento o caída que resulta.' : ''}</div>`;
+  if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, el estado actual y a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.${FUT() ? ` A la derecha de diciembre está el <b>${FUT().trim} trimestre ${FUT().anio}</b> (${FUT().meses.join(', ')}): regístralo también, porque el MEF pide la programación por trimestre.` : ''}${S.lineas.some(tieneMef) ? ' En las <b>inversiones con META MEF</b>, el monto de cada mes es el <b>ajuste</b> a la meta MEF trimestral: debajo verás la meta MEF y el incremento o caída que resulta.' : ''}</div>`;
   if (e.estado === 'ENVIADO') return `<div class="banner warn"><b>Pedido enviado a OPP el ${esc(e.enviado)}.</b> Queda bloqueado hasta que OPP lo apruebe u observe.</div>`;
   if (e.estado === 'OBSERVADO') return `<div class="banner bad"><b>OPP observó el pedido</b> (${esc(e.revisor)}, ${esc(e.fechaRev)}). Corrige y vuelve a enviar.<p>${esc(e.comentario)}</p></div>`;
   if (e.estado === 'BORRADOR') return `<div class="banner info"><b>Borrador guardado.</b> OPP todavía no lo ve; envíalo cuando esté completo.</div>`;
@@ -754,10 +764,12 @@ function lineaVisible(L){
 
 function pintarTabla(){
   const ini = INI(), ver = S.filtro.verCerrados, ed = editable();
-  const nCols = 2 + (ini > 0 ? (ver ? ini : 1) : 0) + (12 - ini) * 2 + 4;
+  const F = FUT();
+  const nCols = 2 + (ini > 0 ? (ver ? ini : 1) : 0) + (12 - ini) * 2 + 4 + (F ? 6 : 0);
+  const futH = F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">S/ · ${F.trim} trim.</span></th><th class="mes-fut l dsc-h">Detalle ${m} ${F.anio}<br><span class="thn">¿Estado actual y a qué corresponde?</span></th>`).join('') : '';
   const cerrH = ini > 0 ? (ver ? MES.slice(0, ini).map(m => `<th>${m}<br><span class="thn">dev.</span></th>`).join('') : `<th>Ejecutado<br>${MES[0]}–${MES[ini-1]}</th>`) : '';
   let h = `<table class="g"><thead><tr><th class="lin">Proyecto › SEC_FUNC › concepto › clasificador</th><th>PIM</th>${cerrH}
-    ${MES.slice(ini).map(m => `<th class="mes-edit">${m}<br><span class="thn">S/</span></th><th class="mes-edit l dsc-h">Detalle ${m}<br><span class="thn">¿Estado actual y a qué corresponde?</span></th>`).join('')}
+    ${MES.slice(ini).map(m => `<th class="mes-edit">${m}<br><span class="thn">S/</span></th><th class="mes-edit l dsc-h">Detalle ${m}<br><span class="thn">¿Estado actual y a qué corresponde?</span></th>`).join('')}${futH}
     <th>Programación<br>anual</th><th>Saldo PIM sin<br>programar</th><th></th><th class="sd-h" title="Monto del PIM que la unidad declara que no ejecutará al cierre del ejercicio fiscal">Saldo<br>declarado</th></tr></thead><tbody>`;
   let visibles = [];
   const gs = grupos(S.lineas).filter(g => g.L.some(lineaVisible) || (S.agregando == g.sf));
@@ -776,7 +788,7 @@ function pintarTabla(){
         <div class="meta">${esc(cap(sinCod(R.ao)))}${R.cm ? ` · Meta física: ${fmt2(R.cm)} ${esc(cap(sinCod(R.um)))}` : ''}</div></td>
       <td class="num" data-k="pim"></td>
       ${ini > 0 ? (ver ? MES.slice(0, ini).map((_, i) => `<td class="num closed" data-k="c${i}"></td>`).join('') : `<td class="num closed" data-k="c"></td>`) : ''}
-      ${MES.slice(ini).map((_, k) => `<td class="num" data-k="m${ini+k}"></td><td></td>`).join('')}
+      ${MES.slice(ini).map((_, k) => `<td class="num" data-k="m${ini+k}"></td><td></td>`).join('')}${F ? [0, 1, 2].map(k => `<td class="num fcol" data-k="f${k}"></td><td class="fcol"></td>`).join('') : ''}
       <td class="num" data-k="t"></td><td class="num" data-k="s"></td>
       <td><div class="acts">${ed && (S.catalogo[g.sf] || {}).cl ? `<button class="ico add" data-add="${g.sf}">+ Clasificador</button>` : ''}</div></td>
       <td class="num sdc" data-k="sd"></td></tr>`;
@@ -799,6 +811,11 @@ function pintarTabla(){
         h += `<td><input class="cell ${m?'mod':''}" id="c_${L.id}_${i}" data-i="${i}" inputmode="decimal" value="${fmt2(p[i])}" ${ed?'':'disabled'} aria-label="${esc(nom)} ${MES[i]}">${m ? `<span class="vig">vig. ${fmt(L.po[i])}</span>` : ''}${tieneMef(L) ? `<span class="mefx" id="mx_${L.id}_${i}">${mefTxt(L, i, p[i])}</span>` : ''}</td>
           <td class="l"><textarea class="dsc ${falta ? 'falta' : ''}" id="d_${L.id}_${i}" data-d="${i}" rows="2" maxlength="300" ${ed?'':'disabled'} placeholder="${p[i] > 0 ? 'Detalle de ' + MES[i] : '—'}" aria-label="Detalle de ${MES[i]}: ${esc(nom)}">${esc(d[i] || '')}</textarea></td>`;
       }
+      if (F){ const fv = futVal(L), fdv = futDsc(L), fo = L.f || Z3();
+        for (let k = 0; k < 3; k++){ const m = Math.abs(fv[k] - (+fo[k] || 0)) > 0.005;
+          const falta = S.marcar && S.config.exigirDetalle && (montoMod(L) || txtMod(L)) && fv[k] > 0 && !String(fdv[k] || '').trim();
+          h += `<td class="fcol ${k ? '' : 'fut0'}"><input class="cell fut ${m?'mod':''}" id="cf_${L.id}_${k}" data-fk="${k}" inputmode="decimal" value="${fmt2(fv[k])}" ${ed?'':'disabled'} aria-label="${esc(nom)} ${F.meses[k]} ${F.anio}">${m ? `<span class="vig">vig. ${fmt(fo[k])}</span>` : ''}</td>
+          <td class="l fcol"><textarea class="dsc fut ${falta ? 'falta' : ''}" id="df_${L.id}_${k}" data-fdk="${k}" rows="2" maxlength="300" ${ed?'':'disabled'} placeholder="${fv[k] > 0 ? 'Detalle de ' + F.meses[k] + ' ' + F.anio : '—'}" aria-label="Detalle de ${F.meses[k]} ${F.anio}: ${esc(nom)}">${esc(fdv[k] || '')}</textarea></td>`; } }
       h += `<td class="num tot"></td><td class="num sal"></td>
         <td><div class="acts">${ed ? `<button class="ico" data-a="completar" title="Reparte en los meses editables el PIM del clasificador que no está declarado como saldo">Completar PIM</button>${L.nueva && !L.vigenteDe ? '<button class="ico" data-a="quitar" title="Quitar este clasificador agregado">Quitar</button>' : '<button class="ico" data-a="reset" title="Volver al POI vigente">↺</button>'}` : ''}</div></td>
         <td class="sdc"><input class="cell sdin ${sm?'mod':''}" id="sd_${L.id}" inputmode="decimal" value="${fmt2(sdVal(L))}" ${ed?'':'disabled'} aria-label="Saldo declarado: ${esc(nom)}" title="Monto del PIM que no se ejecutará al cierre del ejercicio">${sm ? `<span class="vig">vig. ${fmt(L.sd)}</span>` : ''}</td></tr>`;
@@ -806,7 +823,7 @@ function pintarTabla(){
     });
   });
   h += `</tbody><tfoot><tr><td class="lin">Total ${esc(S.uo)} (${visibles.length} clasificadores mostrados)</td><td class="num" id="tfPim"></td>${ini>0 ? (ver ? MES.slice(0,ini).map((_,i)=>`<td class="num" id="tfC${i}"></td>`).join('') : '<td class="num" id="tfC"></td>') : ''}
-    ${MES.slice(ini).map((_, k) => `<td class="num" id="tfM${ini+k}"></td><td></td>`).join('')}<td class="num" id="tfT"></td><td class="num" id="tfS"></td><td></td><td class="num sdc" id="tfSD"></td></tr></tfoot></table>`;
+    ${MES.slice(ini).map((_, k) => `<td class="num" id="tfM${ini+k}"></td><td></td>`).join('')}${F ? [0, 1, 2].map(k => `<td class="num" id="tfF${k}"></td><td></td>`).join('') : ''}<td class="num" id="tfT"></td><td class="num" id="tfS"></td><td></td><td class="num sdc" id="tfSD"></td></tr></tfoot></table>`;
   const tw = $('#tw'); tw.innerHTML = h;
   visibles.forEach(pintarFila);
   gs.forEach(g => pintarGrupo(g.sf));
@@ -817,9 +834,11 @@ function pintarTabla(){
     inp.addEventListener('blur', () => { inp.value = fmt2(parse(inp.value)); });
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter'){ ev.preventDefault(); moverFoco(inp, ev.shiftKey ? -1 : 1); } });
     if (inp.classList.contains('sdin')) inp.addEventListener('input', () => editarSd(inp.closest('tr').dataset.id, parse(inp.value), inp));
+    else if (inp.classList.contains('fut')) inp.addEventListener('input', () => editarFut(inp.closest('tr').dataset.id, +inp.dataset.fk, parse(inp.value), inp));
     else inp.addEventListener('input', () => editar(inp.closest('tr').dataset.id, +inp.dataset.i, parse(inp.value), inp));
   });
-  tw.querySelectorAll('textarea.dsc').forEach(t => t.addEventListener('input', () => editarDsc(t.closest('tr').dataset.id, +t.dataset.d, t)));
+  tw.querySelectorAll('textarea.dsc:not(.fut)').forEach(t => t.addEventListener('input', () => editarDsc(t.closest('tr').dataset.id, +t.dataset.d, t)));
+  tw.querySelectorAll('textarea.dsc.fut').forEach(t => t.addEventListener('input', () => editarFutDsc(t.closest('tr').dataset.id, +t.dataset.fdk, t)));
   tw.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => accionFila(b.closest('tr').dataset.id, b.dataset.a));
   tw.querySelectorAll('button[data-tog]').forEach(b => b.onclick = () => { const sf = b.dataset.tog; if (S.colapsados[sf]) delete S.colapsados[sf]; else S.colapsados[sf] = 1; pintarTabla(); });
   tw.querySelectorAll('button[data-add]').forEach(b => b.onclick = () => { S.agregando = S.agregando == b.dataset.add ? null : b.dataset.add; delete S.colapsados[b.dataset.add]; pintarTabla(); });
@@ -898,6 +917,19 @@ function editarSd(id, v, inp){
   if (inp) marcaVig(inp, sdMod(L), 'vig. ' + fmt(L.sd));
   refrescarTodo(L);
 }
+function editarFut(id, k, v, inp){
+  const L = S.lineas.find(l => l.id === id), e = asegurarEdit(L), fo = L.f || Z3(), F = FUT();
+  e.f[k] = r2(v);
+  if (inp){ marcaVig(inp, Math.abs(e.f[k] - (+fo[k] || 0)) > 0.005, 'vig. ' + fmt(fo[k]));
+    const t = document.getElementById(`df_${id}_${k}`); if (t) t.placeholder = v > 0 ? 'Detalle de ' + F.meses[k] + ' ' + F.anio : '—'; }
+  refrescarTodo(L);
+}
+function editarFutDsc(id, k, t){
+  const L = S.lineas.find(l => l.id === id);
+  asegurarEdit(L).fd[k] = t.value;
+  if (t.value.trim()) t.classList.remove('falta');
+  refrescarEstadoFila(L); pintarKPIs();
+}
 function editarDsc(id, i, t){
   const L = S.lineas.find(l => l.id === id);
   asegurarEdit(L).d[i] = t.value;
@@ -908,7 +940,7 @@ function editarDsc(id, i, t){
 function accionFila(id, a){
   const L = S.lineas.find(l => l.id === id), ini = INI();
   if (a === 'quitar'){ S.lineas = S.lineas.filter(x => x.id !== id); delete S.edits[id]; }
-  if (a === 'reset'){ delete S.edits[id]; }
+  if (a === 'reset'){ delete S.edits[id]; }   // vuelve a lo vigente (también el trimestre siguiente)
   if (a === 'completar'){
     const e = asegurarEdit(L), p = propuesta(L);
     const cerr = p.slice(0, ini).reduce((x,y)=>x+y,0);
@@ -951,6 +983,7 @@ function pintarGrupo(sf){
   for (let i = ini; i < 12; i++) set('m'+i, sum(p => p[i]));
   const t = sum(p => p.reduce((a,b)=>a+b,0)), pim = sum((p, L) => L.pim);
   set('t', t); set('s', pim - t); set('sd', sum((p, L) => sdVal(L)));
+  if (FUT()) for (let k = 0; k < 3; k++) set('f' + k, Ls.reduce((a, L) => a + futVal(L)[k], 0));
   const s = tr.querySelector('[data-k="s"]');
   s.className = 'num ' + (pim - t < -1 ? 'neg' : pim - t > 1 ? 'pos' : 'zero');
   s.title = pim - t < -1 ? 'La programación de la meta supera su PIM: no se podrá enviar' : '';
@@ -965,6 +998,7 @@ function pintarPie(vis){
   for (let i = ini; i < 12; i++) set('tfM'+i, sum(L => propuesta(L)[i]));
   const t = sum(L => propuesta(L).reduce((a,b)=>a+b,0)); set('tfT', t); set('tfS', sum(L => L.pim) - t);
   set('tfSD', sum(sdVal));
+  if (FUT()) for (let k = 0; k < 3; k++) set('tfF' + k, sum(L => futVal(L)[k]));
 }
 
 function pintarKPIs(){
@@ -985,7 +1019,13 @@ function pintarKPIs(){
     <div class="kpi"><small>POI vigente anual</small><b>${fmtM(vig)}</b><i>programación aprobada</i></div>
     <div class="kpi ${mods ? 'warn' : ''}"><small>Propuesta anual</small><b>${fmtM(prop)}</b><i>${mods} clasificadores modificados${nuevos ? ` (${nuevos} nuevos)` : ''} · ${fmtM(mov)} movidos</i></div>
     <div class="kpi ${sobre ? 'bad' : sal > 1 ? 'warn' : 'ok'}"><small>Saldo PIM sin programar</small><b>${fmtM(sal)}</b><i>${sobre ? sobre + ' SEC_FUNC superan su PIM' : sal > 1 ? 'aún por programar' : 'cuadra con el PIM'}</i></div>
-    <div class="kpi ${sd > 0 ? 'warn' : ''}"><small>Saldo declarado</small><b>${fmtM(sd)}</b><i>no se ejecutará al cierre · ${pim ? (sd/pim*100).toFixed(1) : 0}% del PIM</i></div>${kpiMef(S.lineas.map(L => ({ mef: L.mef, m: propuesta(L) })), ini)}`;
+    <div class="kpi ${sd > 0 ? 'warn' : ''}"><small>Saldo declarado</small><b>${fmtM(sd)}</b><i>no se ejecutará al cierre · ${pim ? (sd/pim*100).toFixed(1) : 0}% del PIM</i></div>${kpiMef(S.lineas.map(L => ({ mef: L.mef, m: propuesta(L) })), ini)}${kpiFut()}`;
+}
+/** KPI del trimestre siguiente (p. ej. I trimestre 2027) */
+function kpiFut(){
+  const F = FUT(); if (!F) return '';
+  let t = 0, v = 0; S.lineas.forEach(L => { t += futVal(L).reduce((a, b) => a + b, 0); v += (L.f || Z3()).reduce((a, b) => a + b, 0); });
+  return `<div class="kpi fut ${Math.abs(t - v) > .5 ? 'warn' : ''}"><small>${F.trim} trimestre ${F.anio} · programado</small><b>${fmtM(t)}</b><i>${F.meses.join('–')} ${F.anio}${Math.abs(t - v) > .5 ? ' · vigente ' + fmtM(v) : ' · programación trimestral MEF'}</i></div>`;
 }
 /** KPI de inversiones con meta MEF: meta MEF de los meses abiertos, ajuste propuesto, incrementos y caídas */
 function mefSum(filas, ini){
@@ -1017,7 +1057,16 @@ async function guardar(enviar){
       const falta = []; for (let i = ini; i < 12; i++) if (p[i] > 0 && !String(d[i] || '').trim()) falta.push(MES[i]);
       if (falta.length) errs.push(`${et(L)}: falta el detalle de ${falta.join(', ')}.`);
     }
-    cambios.push({ id: L.id, m: p, d: d.map(x => String(x || '').trim()), sd, just, nueva: !!L.nueva, sf: L.sf, cl: L.cl, fu: L.fu });
+    const F = FUT(), fv = futVal(L), fdv = futDsc(L);
+    if (F){
+      if (fv.some(v => v < 0)) errs.push(`${et(L)}: hay montos negativos en ${F.trim} trimestre ${F.anio}.`);
+      if (enviar && S.config.exigirDetalle && (montoMod(L) || txtMod(L))){
+        const fl = []; for (let k = 0; k < 3; k++) if (fv[k] > 0 && !String(fdv[k] || '').trim()) fl.push(F.meses[k] + ' ' + F.anio);
+        if (fl.length) errs.push(`${et(L)}: falta el detalle de ${fl.join(', ')}.`);
+      }
+    }
+    cambios.push({ id: L.id, m: p, d: d.map(x => String(x || '').trim()), sd, just, nueva: !!L.nueva, sf: L.sf, cl: L.cl, fu: L.fu,
+      f: F ? fv.slice() : null, fd: F ? fdv.map(x => String(x || '').trim()) : null });
   });
   grupos(S.lineas).forEach(g => { const t = totSf(g.sf);
     if (t.mod && t.prog - t.pim > 1) errs.push(`SEC_FUNC ${pad4(g.sf)}: la programación anual (${fmt(t.prog)}) supera el PIM de la meta (${fmt(t.pim)}).`); });
@@ -1115,7 +1164,9 @@ function detalleEnvio(){
   const gs = {}; const orden = [];
   lineas.forEach(L => { if (!gs[L.sf]){ gs[L.sf] = []; orden.push(L.sf); } gs[L.sf].push(L); });
   let rows = '';
-  const nC = 4 + (12 - ini) + 2;
+  const F = FUT();
+  const nC = 4 + (12 - ini) + 2 + (F ? 3 : 0);
+  let tFv = 0, tFp = 0;
   const ejH = ini > 0 ? `Ejecutado<br>${MES[0]}–${MES[ini-1]}` : 'Devengado';
   orden.sort((a,b) => a - b).forEach(sf => {
     const R = gs[sf][0];
@@ -1132,8 +1183,10 @@ function detalleEnvio(){
       rows += `<tr><td class="lin" rowspan="2"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}${tieneMef(L) ? ' <span class="chip mef">META MEF</span>' : ''}</div><div class="ln">${esc(cap(nm.join('-')))}</div><div class="meta">${esc(abrev(L.fu))}${L.nueva ? ' · requiere modificación presupuestal' : ''}</div>
           ${L.just ? `<div class="meta" style="color:var(--ink);margin-top:6px"><b>Justificación:</b> ${esc(L.just)}</div>` : ''}</td>
         <td class="num ref" rowspan="2">${fmt(L.pim)}</td><td class="num ref ej" rowspan="2">${fmt(ej)}</td>
-        <td class="l" style="color:var(--muted)">Vigente</td>${MES.slice(ini).map((_, k) => `<td class="num det">${fmt(v[ini+k])}${dv[ini+k] ? `<span class="dtx">${esc(dv[ini+k])}</span>` : ''}</td>`).join('')}<td class="num">${fmt(MES.reduce((a,_,i)=>a+(i<ini?cerrado(L,i):v[i]),0))}</td><td class="num sdc">${fmt(sdV)}</td></tr>
+        <td class="l" style="color:var(--muted)">Vigente</td>${MES.slice(ini).map((_, k) => `<td class="num det">${fmt(v[ini+k])}${dv[ini+k] ? `<span class="dtx">${esc(dv[ini+k])}</span>` : ''}</td>`).join('')}${F ? [0, 1, 2].map(k => `<td class="num det fcol ${k ? '' : 'fut0'}">${fmt((L.f || Z3())[k])}${(L.fd || E3())[k] ? `<span class="dtx">${esc(L.fd[k])}</span>` : ''}</td>`).join('') : ''}<td class="num">${fmt(MES.reduce((a,_,i)=>a+(i<ini?cerrado(L,i):v[i]),0))}</td><td class="num sdc">${fmt(sdV)}</td></tr>
         <tr class="prop"><td class="l"><b>Propuesto</b></td>${MES.slice(ini).map((_, k) => { const i = ini+k, x = p[i]-v[i]; return `<td class="num det">${fmt(p[i])}${Math.abs(x) > .5 ? `<span class="vig ${x>0?'diff-up':'diff-dn'}">${x>0?'+':''}${fmt(x)}</span>` : ''}${tieneMef(L) ? `<span class="mefx">${mefTxt(L, i, p[i])}</span>` : ''}${d[i] ? `<span class="dtx">${esc(d[i])}</span>` : ''}</td>`; }).join('')}
+        ${F ? [0, 1, 2].map(k => { const pf = (L.propF || Z3())[k], vf = (L.f || Z3())[k], x = pf - vf, dd = (L.propFd || E3())[k]; tFv += vf; tFp += pf;
+          return `<td class="num det fcol ${k ? '' : 'fut0'}">${fmt(pf)}${Math.abs(x) > .5 ? `<span class="vig ${x>0?'diff-up':'diff-dn'}">${x>0?'+':''}${fmt(x)}</span>` : ''}${dd ? `<span class="dtx">${esc(dd)}</span>` : ''}</td>`; }).join('') : ''}
         <td class="num">${fmt(tt)}</td><td class="num sdc"><b>${fmt(sdP)}</b>${Math.abs(sdX) > .5 ? `<span class="vig ${sdX>0?'diff-dn':'diff-up'}">${sdX>0?'+':''}${fmt(sdX)}</span>` : ''}</td></tr>`;
     });
   });
@@ -1148,11 +1201,12 @@ function detalleEnvio(){
       <div><small>Reducciones ${MES[ini]}–Dic</small><span class="num diff-dn">${baja > .5 ? '−' : ''}${fmt(baja)}</span></div>
       <div><small>Efecto neto</small><span class="num">${fmt(tp - tv)}</span></div>
       ${(() => { const k = mefSum(lineas.map(L => ({ mef: L.mef, m: L.propuesto })), ini); return k.n ? `<div><small>Inversiones · meta MEF ${MES[ini]}–Dic</small><span class="num">${fmt(k.me)} → ajuste ${fmt(k.aj)} <span class="diff-up">+${fmt(k.inc)}</span> <span class="diff-dn">−${fmt(k.cai)}</span></span></div>` : ''; })()}
+      ${F ? `<div><small>${F.trim} trimestre ${F.anio}</small><span class="num">${fmt(tFp)}${Math.abs(tFp - tFv) > .5 ? ` <span style="color:var(--muted)">(vig. ${fmt(tFv)})</span>` : ''}</span></div>` : ''}
       <div><small>Saldo declarado</small><span class="num" style="color:var(--warn)">${fmt(tSdP)}${Math.abs(tSdP - tSdV) > .5 ? ` <span style="color:var(--muted)">(vig. ${fmt(tSdV)})</span>` : ''}</span></div>
     </div>
     <div class="banner info" style="color:var(--ink)"><b style="color:var(--accent)">Justificación general</b><p>${esc(e.just || '—')}</p></div>
     ${e.comentario ? `<div class="banner ${e.estado==='APROBADO'?'ok':'bad'}"><b>Revisión OPP (${esc(e.revisor)}, ${esc(e.fechaRev)})</b><p>${esc(e.comentario)}</p></div>` : ''}
-    <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}<th>Anual<br><span class="thn">ejec. + prog.</span></th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}${F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">${F.trim} trim. · monto y detalle</span></th>`).join('') : ''}<th>Anual ${esc(S.config.anio)}<br><span class="thn">ejec. + prog.</span></th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${puede ? `<div class="decide"><label class="f" for="com">Comentario para el área (obligatorio si observas)<textarea id="com" placeholder="Ej.: sustentar el adelanto de diciembre con el cronograma del contrato"></textarea></label>
       <div class="row"><button class="btn ok" id="bAprobar">Aprobar y actualizar POI vigente</button><button class="btn bad" id="bObservar">Observar y devolver</button></div></div>` : ''}
   </div>`;
@@ -1518,7 +1572,7 @@ const VERSIONES = [
   { k:'env', n:'Vigente + pedidos enviados a OPP' },
   { k:'vig', n:'Solo programación aprobada (vigente)' },
   { k:'all', n:'Incluye borradores y observados de las áreas' } ];
-S.cons = { data:null, grupo:'arbol', f:{ pp:'', fi:'', og:'', uo:'', sf:'', cl:'', fu:'', c2:'' }, ver:'env', soloMod:false, trim:[false, false, false, false], ab:{} };
+S.cons = { data:null, grupo:'arbol', f:{ pp:'', fi:'', og:'', uo:'', sf:'', cl:'', fu:'', c2:'' }, ver:'env', soloMod:false, trim:[false, false, false, false, false], ab:{} };
 
 async function abrirConsolidado(forzar){
   if (!S.cons.data || forzar) S.cons.data = await run('api_consolidado');
@@ -1534,10 +1588,12 @@ const sumR = (a, d, h) => a.slice(d, h).reduce((x, y) => x + y, 0);
 function thMef(){
   const r1 = TRIM.map((t, q) => { const ab = S.cons.trim[q];
     return `<th class="qg q0" colspan="${ab ? 9 : 3}"><button class="qt" data-trim="${q}" title="${ab ? 'Agrupar' : 'Ver cada mes'}">${ab ? '⊟' : '⊞'}</button> ${t} trimestre</th>`; }).join('')
-    + `<th class="qg q0" colspan="3">Anual</th>`;
+    + `<th class="qg q0" colspan="3">Anual</th>`
+    + (consFut() ? `<th class="qg q0 mes-fut" colspan="${S.cons.trim[4] ? 4 : 1}"><button class="qt" data-trim="4" title="${S.cons.trim[4] ? 'Agrupar' : 'Ver cada mes'}">${S.cons.trim[4] ? '⊟' : '⊞'}</button> ${consFut().trim} trimestre ${consFut().anio}</th>` : '');
   const r2 = TRIM.map((t, q) => (S.cons.trim[q] ? [0, 1, 2].map(j => `<th class="${j ? '' : 'q0'}">${MES[q * 3 + j]}<br><span class="thn">meta MEF</span></th><th class="qm">${MES[q * 3 + j]}<br><span class="thn">devengado</span></th>`).join('') : '')
     + `<th class="qd ${S.cons.trim[q] ? '' : 'q0'}">Meta MEF</th><th class="qd">Devengado</th><th class="qd qp">% logrado</th>`).join('')
-    + `<th class="qd q0">Meta MEF</th><th class="qd">Devengado</th><th class="qd qp">% logrado</th>`;
+    + `<th class="qd q0">Meta MEF</th><th class="qd">Devengado</th><th class="qd qp">% logrado</th>`
+    + (consFut() ? (S.cons.trim[4] ? consFut().meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'q0'}">${m}<br><span class="thn">programado</span></th>`).join('') : '') + `<th class="mes-fut ${S.cons.trim[4] ? '' : 'q0'}">Programado<br><span class="thn">${consFut().trim} trim. ${consFut().anio}</span></th>` : '');
   return { r1, r2 };
 }
 function tdMef(x){
@@ -1545,15 +1601,18 @@ function tdMef(x){
   return TRIM.map((t, q) => { const me = sumR(x.mef, q * 3, q * 3 + 3), dv = sumR(x.dv, q * 3, q * 3 + 3);
     return (S.cons.trim[q] ? [0, 1, 2].map(j => `<td class="num ${j ? '' : 'q0'}">${fmt(x.mef[q * 3 + j])}</td><td class="num qm">${fmt(x.dv[q * 3 + j])}</td>`).join('') : '')
       + `<td class="num qd ${S.cons.trim[q] ? '' : 'q0'}">${fmt(me)}</td><td class="num qd">${fmt(dv)}</td>${pc(dv, me)}`; }).join('')
-    + `<td class="num qd q0">${fmt(sumR(x.mef, 0, 12))}</td><td class="num qd">${fmt(sumR(x.dv, 0, 12))}</td>${pc(sumR(x.dv, 0, 12), sumR(x.mef, 0, 12))}`;
+    + `<td class="num qd q0">${fmt(sumR(x.mef, 0, 12))}</td><td class="num qd">${fmt(sumR(x.dv, 0, 12))}</td>${pc(sumR(x.dv, 0, 12), sumR(x.mef, 0, 12))}`
+    + (consFut() ? (S.cons.trim[4] ? x.f.map((v, k) => `<td class="num fcol ${k ? '' : 'q0'}">${fmt(v)}</td>`).join('') : '') + `<td class="num fcol qp ${S.cons.trim[4] ? '' : 'q0'}">${fmt(x.f[0] + x.f[1] + x.f[2])}</td>` : '');
 }
-const nColMef = () => S.cons.trim.reduce((a, ab) => a + (ab ? 9 : 3), 3);
+const consFut = () => (S.cons.data && S.cons.data.fut) || null;
+const nColMef = () => S.cons.trim.slice(0, 4).reduce((a, ab) => a + (ab ? 9 : 3), 3) + (consFut() ? (S.cons.trim[4] ? 4 : 1) : 0);
 /** Acumula una fila del consolidado en un nodo */
 function consSumar(x, r, P){
   x.pia += +r.pia || 0; x.pim += r.pim; x.ej += r.ej; x.sd += +P.sd || 0; x.n++; if (P.mod) x.mod++;
+  for (let k = 0; k < 3; k++) x.f[k] += +(P.f || [])[k] || 0;
   for (let i = 0; i < 12; i++){ x.mef[i] += r.mef ? +r.mef[i] || 0 : 0; x.dv[i] += r.dv ? +r.dv[i] || 0 : 0; }
 }
-const nodoNuevo = (k, etq, nivel) => ({ k, etq, nivel, pia:0, pim:0, ej:0, sd:0, n:0, mod:0, mef:new Array(12).fill(0), dv:new Array(12).fill(0), hijos:{}, orden:[] });
+const nodoNuevo = (k, etq, nivel) => ({ k, etq, nivel, pia:0, pim:0, ej:0, sd:0, n:0, mod:0, mef:new Array(12).fill(0), dv:new Array(12).fill(0), f:[0, 0, 0], hijos:{}, orden:[] });
 /** Árbol Proyecto › Componente (finalidad) › Unidad orgánica */
 function consArbol(filas){
   const raiz = nodoNuevo('', '', -1);
@@ -1572,7 +1631,7 @@ function filasArbol(nd, out){
 }
 function consProg(r){
   const usa = r.p && (S.cons.ver === 'all' || (S.cons.ver === 'env' && r.pe === 'ENVIADO'));
-  return usa ? { m: r.p, sd: r.psd, mod: true, est: r.pe } : { m: r.v, sd: r.sd, mod: false, est: r.ap ? 'APROBADO' : '' };
+  return usa ? { m: r.p, sd: r.psd, mod: true, est: r.pe, f: r.pf || r.fv || Z3() } : { m: r.v, sd: r.sd, mod: false, est: r.ap ? 'APROBADO' : '', f: r.fv || Z3() };
 }
 const codNom = t => { const m = String(t || '').match(/^\s*(\d+)\s*\.\s*(.*)$/); return m ? m[1] + '.' + m[2].trim().toUpperCase() : String(t || '—').toUpperCase(); };
 const consEtq = (k, r) => k === 'pp' || k === 'fi' ? codNom(r[k]) : k === 'sf' ? pad4(r.sf) + ' · ' + cap(sinCod(r.fi)).slice(0, 70)
@@ -1726,11 +1785,14 @@ async function descargarExcel(){
   const MESM = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
   const rx = v => Math.round(v * 100) / 100, pcx = (d, m) => { const p = pctLogro(d, m); return p == null ? '' : Math.round(p * 10) / 10; };
   // columnas MEF: por trimestre [MES MEF, MES DEVENGADO]×3 + TRIM META MEF, DEVENGADO, % LOGRADO; y anual
+  const FX = consFut(), MESF = ['ENERO', 'FEBRERO', 'MARZO'];
   const cabM = [].concat(...TRIM.map((t, q) => [].concat(...[0, 1, 2].map(j => [MESM[q * 3 + j] + ' MEF', MESM[q * 3 + j] + ' DEVENGADO']))
-    .concat([t + ' TRIM. META MEF', t + ' TRIM. DEVENGADO', t + ' TRIM. % LOGRADO']))).concat(['ANUAL META MEF', 'ANUAL DEVENGADO', 'ANUAL % LOGRADO']);
+    .concat([t + ' TRIM. META MEF', t + ' TRIM. DEVENGADO', t + ' TRIM. % LOGRADO']))).concat(['ANUAL META MEF', 'ANUAL DEVENGADO', 'ANUAL % LOGRADO'])
+    .concat(FX ? MESF.map(m => m + ' ' + FX.anio + ' PROGRAMADO').concat([FX.trim + ' TRIM. ' + FX.anio + ' PROGRAMADO']) : []);
   const valM = x => [].concat(...TRIM.map((t, q) => { const me = sumR(x.mef, q * 3, q * 3 + 3), dv = sumR(x.dv, q * 3, q * 3 + 3);
     return [].concat(...[0, 1, 2].map(j => [rx(x.mef[q * 3 + j]), rx(x.dv[q * 3 + j])])).concat([rx(me), rx(dv), pcx(dv, me)]); }))
-    .concat([rx(sumR(x.mef, 0, 12)), rx(sumR(x.dv, 0, 12)), pcx(sumR(x.dv, 0, 12), sumR(x.mef, 0, 12))]);
+    .concat([rx(sumR(x.mef, 0, 12)), rx(sumR(x.dv, 0, 12)), pcx(sumR(x.dv, 0, 12), sumR(x.mef, 0, 12))])
+    .concat(FX ? x.f.map(rx).concat([rx(x.f[0] + x.f[1] + x.f[2])]) : []);
   // Hoja «Resumen por proyecto»: Proyecto › Componente (finalidad) › Unidad orgánica, todo abierto
   const arb = consArbol(filas), cabRes = ['Nivel', 'Proyecto / Componente / Unidad orgánica', 'PIM'].concat(cabM), cuerpoRes = [];
   const NIV = ['Proyecto', 'Componente', 'Unidad orgánica'];
@@ -1740,13 +1802,13 @@ async function descargarExcel(){
   cuerpoRes.push(['Total', 'Total inversiones', rx(arb.pim)].concat(valM(arb)));
   // Hoja «Meta MEF y avance»: una fila por clasificador
   const cabAv = ['Proyecto', 'Componente (finalidad)', 'Unidad orgánica', 'Órgano', 'SEC_FUNC', 'Clasificador', 'Fuente de financiamiento', 'PIM'].concat(cabM);
-  const cuerpoAv = filas.map(r => { const x = { mef: MES.map((_, i) => r.mef ? +r.mef[i] || 0 : 0), dv: MES.map((_, i) => r.dv ? +r.dv[i] || 0 : 0) };
+  const cuerpoAv = filas.map(r => { const x = { mef: MES.map((_, i) => r.mef ? +r.mef[i] || 0 : 0), dv: MES.map((_, i) => r.dv ? +r.dv[i] || 0 : 0), f: (consProg(r).f || [0, 0, 0]).map(v => +v || 0) };
     return [codNom(r.pp), codNom(r.fi), r.uo, r.og, pad4(r.sf), r.cl, r.fu, rx(r.pim)].concat(valM(x)); });
-  const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(['Total anual','Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']).concat(cabMef);
+  const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(FX ? FX.meses.map(m => m + ' ' + FX.anio + ' (programado)') : []).concat(['Total anual ' + D.anio,'Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']).concat(cabMef);
   const cuerpo = filas.map(r => { const P = consProg(r), tot = P.m.reduce((a, b) => a + b, 0);
     const mef = !hayMef ? [] : [r.ti || ''].concat(...mAb.map(i => { if (!r.mef) return ['', '', '', ''];
       const me = +r.mef[i] || 0, aj = +P.m[i] || 0, x = aj - me; return [r2x(me), r2x(Math.max(0, x)), r2x(Math.max(0, -x)), r2x(aj)]; }));
-    return [pad4(r.sf), r.cl, r.fu].concat(P.m.map(v => Math.round(v * 100) / 100)).concat([Math.round(tot * 100) / 100, +P.sd || 0, r.uo, r.og, r.c2,
+    return [pad4(r.sf), r.cl, r.fu].concat(P.m.map(v => Math.round(v * 100) / 100)).concat(FX ? (P.f || [0, 0, 0]).map(v => Math.round((+v || 0) * 100) / 100) : []).concat([Math.round(tot * 100) / 100, +P.sd || 0, r.uo, r.og, r.c2,
       P.mod ? (P.est === 'ENVIADO' ? 'Propuesta enviada a OPP' : 'Propuesta en ' + String(P.est).toLowerCase()) : (P.est === 'APROBADO' ? 'Aprobado por OPP' : 'POI inicial')]).concat(mef); });
   const hoy = new Date(), p2 = n => String(n).padStart(2, '0');
   const nombre = `Programacion_${D.anio}_${S.cons.ver === 'vig' ? 'vigente' : S.cons.ver === 'env' ? 'vigente_mas_enviados' : 'con_borradores'}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}`;
@@ -1759,7 +1821,7 @@ async function descargarExcel(){
       { nombre:'Resumen por proyecto', filas:[cabRes].concat(cuerpoRes), cabecera:true, numDesde:2, numHasta:cabRes.length, congelar:{c:2, r:1}, filtro:true,
         anchos:[15, 70].concat(cabRes.slice(2).map(() => 15)) },
       { nombre:'Programación', filas:[cab].concat(cuerpo), cabecera:true, numDesde:3, numHasta:cab.length, congelar:{c:3, r:1}, filtro:true,
-        anchos:[10, 50, 30].concat(MES.map(() => 14)).concat([16, 15, 12, 9, 30, 24]).concat(cabMef.map((_, k) => k ? 14 : 12)) },
+        anchos:[10, 50, 30].concat(MES.map(() => 14)).concat(FX ? [16, 16, 16] : []).concat([16, 15, 12, 9, 30, 24]).concat(cabMef.map((_, k) => k ? 14 : 12)) },
       { nombre:'Meta MEF y avance', filas:[cabAv].concat(cuerpoAv), cabecera:true, numDesde:7, numHasta:cabAv.length, congelar:{c:3, r:1}, filtro:true,
         anchos:[40, 50, 12, 9, 10, 50, 26].concat(cabAv.slice(7).map(() => 15)) },
       { nombre:'Parámetros', filas:par, titulos:[0, 9], anchos:[32, 70] } ]);
@@ -1777,6 +1839,8 @@ let MOCK = null;
 function iniciarDemo(){
   const D = window.DEMO; if (!D) return;
   const cfg = Object.assign({ soloInv: true }, D.config);
+  cfg.proceso = 'Reprogramación de inversiones ' + cfg.anio + ' – ' + ['I', 'II', 'III', 'IV'][Math.ceil(cfg.mesInicio / 3) - 1] + ' trimestre';
+  if (cfg.mesInicio >= 10) cfg.fut = { anio: String(+cfg.anio + 1), trim: 'I', periodo: (+cfg.anio + 1) + '-T1', meses: ['Ene', 'Feb', 'Mar'] };
   const base = cfg.soloInv ? D.base.filter(b => b.ti === 'Inversiones' && (b.pim > 0 || b.dva > 0 || (b.mef && b.mef.some(Boolean)))) : D.base;
   base.forEach(b => { b.dsc = E12(); b.sd = 0; });
   const envios = [], detalle = {}, vig = {};
@@ -1790,10 +1854,10 @@ function iniciarDemo(){
   const nueva = (ref, cl, fu) => Object.assign({}, ref, { id: idNueva(ref.sf, cl, fu), nueva: true, ge: genericaDe(cl), fu, cl, c2: 'Clasificador agregado', pim:0, ce:0, co:0, dva:0, po:Z12(), poOrig:Z12(), dv:Z12(), dsc:E12(), sd:0, vigenteDe:'', mef: ref.mef ? Z12() : null });
   function lineasUO(uo){
     const propias = base.filter(b => b.uo === uo);
-    const out = propias.map(b => { const v = vig[b.id] || vig[idNueva(b.sf, b.cl, b.fu)]; return Object.assign({}, b, { po: v ? v.m : b.po, poOrig: b.po, dsc: v ? v.d : E12(), sd: v ? v.sd : 0, vigenteDe: v ? v.envio : '' }); });
+    const out = propias.map(b => { const v = vig[b.id] || vig[idNueva(b.sf, b.cl, b.fu)]; return Object.assign({}, b, { po: v ? v.m : b.po, poOrig: b.po, dsc: v ? v.d : E12(), sd: v ? v.sd : 0, vigenteDe: v ? v.envio : '', f: v && v.f ? v.f : Z3(), fd: v && v.fd ? v.fd : E3() }); });
     const existe = {}; propias.forEach(b => existe[idNueva(b.sf, b.cl, b.fu)] = 1);
     Object.keys(vig).forEach(id => { const v = vig[id]; if (id[0] !== 'N' || existe[id]) return; const ref = propias.find(b => b.sf == v.sf); if (!ref) return;
-      out.push(Object.assign(nueva(ref, v.cl, v.fu), { po: v.m, dsc: v.d, sd: v.sd, vigenteDe: v.envio })); });
+      out.push(Object.assign(nueva(ref, v.cl, v.fu), { po: v.m, dsc: v.d, sd: v.sd, vigenteDe: v.envio, f: v.f || Z3(), fd: v.fd || E3() })); });
     return out;
   }
   function catalogo(uo){
@@ -1868,6 +1932,7 @@ function iniciarDemo(){
       let variacion = 0;
       const limpios = cambios.map(c => { const L = ls[c.id] || nueva(base.find(b => b.uo === uo && b.sf == c.sf), c.cl, c.fu); let x = 0, tx = false;
         for (let i = ini; i < 12; i++){ x += Math.abs(c.m[i] - L.po[i]); if ((c.d[i] || '') !== (L.dsc[i] || '')) tx = true; }
+        if (c.f) for (let k = 0; k < 3; k++){ x += Math.abs((+c.f[k] || 0) - (+(L.f || Z3())[k] || 0)); if ((c.fd[k] || '') !== ((L.fd || E3())[k] || '')) tx = true; }
         const xs = Math.abs((+c.sd || 0) - (+L.sd || 0)) > .005;
         variacion += x; return (x > .005 || tx || xs) ? Object.assign({}, c, { nueva: !!L.nueva }) : null; }).filter(Boolean);
       if (!e){ e = { id:'E' + Date.now().toString().slice(-10) + '-' + uo.replace(/\W/g,''), proceso:cfg.proceso, og:(uni.find(x=>x.uo===uo)||{}).og, uo, creado:hoy(), revisor:'', fechaRev:'', comentario:'' }; envios.push(e); }
@@ -1883,7 +1948,7 @@ function iniciarDemo(){
       ses(t); const e = envios.find(x => x.id === id);
       const ls = {}; lineasUO(e.uo).forEach(L => ls[L.id] = L);
       return { envio: e, lineas: (detalle[id] || []).map(d => { const L = ls[d.id] || nueva(base.find(b => b.uo === e.uo && b.sf == d.sf), d.cl, d.fu);
-        return Object.assign({}, L, { propuesto: d.m, propDsc: d.d, propSd: +d.sd || 0, just: d.just }); }) };
+        return Object.assign({}, L, { propuesto: d.m, propDsc: d.d, propSd: +d.sd || 0, just: d.just, propF: d.f || Z3(), propFd: d.fd || E3() }); }) };
     },
     api_consolidado(t){
       ses(t); const filas = [];
@@ -1894,9 +1959,9 @@ function iniciarDemo(){
         ls.forEach(L => { const p = pend[L.id];
           filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', pp:L.pp || '', pia:L.pia || 0, mef:L.mef || null, dv:L.dv, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
             v: MES.map((_, i) => i < ini ? L.dv[i] : L.po[i]), sd:+L.sd || 0, ap:L.vigenteDe ? 1 : 0, nv:L.nueva ? 1 : 0,
-            p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '' }); });
+            p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '', fv: L.f || Z3(), pf: p ? (p.f || Z3()) : null }); });
       });
-      return { ini, anio:cfg.anio, proceso:cfg.proceso, corte:cfg.fechaCorte, filas };
+      return { ini, anio:cfg.anio, proceso:cfg.proceso, corte:cfg.fechaCorte, fut: cfg.fut || null, filas };
     },
     api_notasUO(t, uo){ ses(t); return { notas: JSON.parse(JSON.stringify(notas.filter(n => n.uo === uo).slice().reverse())) }; },
     api_resumenNotas(t){ ses(t); return { notas: JSON.parse(JSON.stringify(notas.slice().reverse())) }; },
@@ -1924,7 +1989,7 @@ function iniciarDemo(){
       const s = ses(t); const e = envios.find(x => x.id === id);
       if (e.estado !== 'ENVIADO') throw new Error('Solo se revisan pedidos en estado ENVIADO.');
       Object.assign(e, { estado: dec, revisor: s.usuario, fechaRev: hoy(), comentario: com || '' });
-      if (dec === 'APROBADO') (detalle[id] || []).forEach(d => vig[d.id] = { m: d.m, d: d.d, sd: +d.sd || 0, envio: id, sf: d.sf, cl: d.cl, fu: d.fu });
+      if (dec === 'APROBADO') (detalle[id] || []).forEach(d => vig[d.id] = { m: d.m, d: d.d, sd: +d.sd || 0, envio: id, sf: d.sf, cl: d.cl, fu: d.fu, f: d.f || Z3(), fd: d.fd || E3() });
       return MOCK.api_resumenOPP(t);
     }
   };
