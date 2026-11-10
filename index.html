@@ -398,7 +398,7 @@ tfoot td,tfoot td.lin{background:var(--surface2)}
   </div>
 </header>
 <div class="strip" id="strip" hidden><div class="wrap" id="stripIn"></div></div>
-<div class="demo" id="demoBar" hidden><div class="wrap">Vista de demostración con la base real del Excel de ejecución SIAF-MPP (corte <span id="demoCorte"></span>). Los pedidos de ejemplo y lo que guardes aquí no se envían a ningún lado; al recargar la página se reinicia.</div></div>
+<div class="demo" id="demoBar" hidden><div class="wrap">Vista de demostración con la base real del Excel de ejecución SIAF-MPP (corte <span id="demoCorte"></span>). Lo que guardes aquí no se envían a ningún lado; al recargar la página se reinicia.</div></div>
 
 <main class="wrap" id="app"></main>
 <div class="loading" id="loading" hidden><span>Cargando…</span></div>
@@ -722,7 +722,7 @@ function bannerEstado(){
   const e = S.envio, c = S.config;
   if (c.esActivo === false) return bannerAnio();
   if (!c.abierto) return `<div class="banner warn"><b>El proceso está cerrado.</b> Puedes consultar la programación, pero no registrar cambios.</div>`;
-  if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.${S.lineas.some(tieneMef) ? ' En las <b>inversiones con META MEF</b>, el monto de cada mes es el <b>ajuste</b> a la meta MEF trimestral: debajo verás la meta MEF y el incremento o caída que resulta.' : ''}</div>`;
+  if (!e) return `<div class="banner info"><b>Cómo llenar:</b> la programación está ordenada por SEC_FUNC (meta). En cada clasificador registra el monto de ${MES[c.mesInicio-1]} a Dic y, en la columna <b>Detalle</b> de cada mes, el estado actual y a qué corresponde (p. ej. «3.ª valorización del contrato N.º 012-2026»). En la última columna, <b>Saldo declarado</b>, indica el monto del PIM que la unidad <b>no ejecutará</b> al cierre del ejercicio. Con <b>+ Clasificador</b> agregas un clasificador que la meta aún no tiene. Guarda como borrador y envíalo a OPP cuando esté completo.${S.lineas.some(tieneMef) ? ' En las <b>inversiones con META MEF</b>, el monto de cada mes es el <b>ajuste</b> a la meta MEF trimestral: debajo verás la meta MEF y el incremento o caída que resulta.' : ''}</div>`;
   if (e.estado === 'ENVIADO') return `<div class="banner warn"><b>Pedido enviado a OPP el ${esc(e.enviado)}.</b> Queda bloqueado hasta que OPP lo apruebe u observe.</div>`;
   if (e.estado === 'OBSERVADO') return `<div class="banner bad"><b>OPP observó el pedido</b> (${esc(e.revisor)}, ${esc(e.fechaRev)}). Corrige y vuelve a enviar.<p>${esc(e.comentario)}</p></div>`;
   if (e.estado === 'BORRADOR') return `<div class="banner info"><b>Borrador guardado.</b> OPP todavía no lo ve; envíalo cuando esté completo.</div>`;
@@ -742,7 +742,7 @@ function pintarTabla(){
   const nCols = 2 + (ini > 0 ? (ver ? ini : 1) : 0) + (12 - ini) * 2 + 4;
   const cerrH = ini > 0 ? (ver ? MES.slice(0, ini).map(m => `<th>${m}<br><span class="thn">dev.</span></th>`).join('') : `<th>Ejecutado<br>${MES[0]}–${MES[ini-1]}</th>`) : '';
   let h = `<table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador de gasto</th><th>PIM</th>${cerrH}
-    ${MES.slice(ini).map(m => `<th class="mes-edit">${m}<br><span class="thn">S/</span></th><th class="mes-edit l dsc-h">Detalle ${m}<br><span class="thn">¿a qué corresponde?</span></th>`).join('')}
+    ${MES.slice(ini).map(m => `<th class="mes-edit">${m}<br><span class="thn">S/</span></th><th class="mes-edit l dsc-h">Detalle ${m}<br><span class="thn">¿Estado actual y a qué corresponde?</span></th>`).join('')}
     <th>Programación<br>anual</th><th>Saldo PIM sin<br>programar</th><th></th><th class="sd-h" title="Monto del PIM que la unidad declara que no ejecutará al cierre del ejercicio fiscal">Saldo<br>declarado</th></tr></thead><tbody>`;
   let visibles = [];
   const gs = grupos(S.lineas).filter(g => g.L.some(lineaVisible) || (S.agregando == g.sf));
@@ -1590,7 +1590,7 @@ function pintarConsolidado(){
   const filaHTML = nd => { const tog = g === 'arbol' && nd.nivel < 2 && nd.orden.length;
     return `<tr class="nv${nd.nivel}"><td class="lin"><div class="ln" title="${esc(nd.etq)}" style="padding-left:${Math.max(0, nd.nivel) * 18}px">${tog ? `<button class="qt" data-nodo="${esc(nd.k)}" title="${abierto(nd) ? 'Contraer' : 'Expandir'}">${abierto(nd) ? '⊟' : '⊞'}</button> ` : ''}${esc(nd.etq)}</div>
       ${nd.nivel === 2 ? `<div class="meta" style="padding-left:${g === 'arbol' ? 36 : 0}px">${nd.n} clasificador${nd.n === 1 ? '' : 'es'}${nd.mod ? ` · <span style="color:var(--warn)">${nd.mod} modificado${nd.mod === 1 ? '' : 's'}</span>` : ''}</div>` : ''}</td>
-      <td class="num">${fmt(nd.pia)}</td><td class="num">${fmt(nd.pim)}</td>${tdMef(nd)}</tr>`; };
+      <td class="num">${fmt(nd.pim)}</td>${tdMef(nd)}</tr>`; };
   $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio)} · ${esc(D.proceso)} · base SIAF corte ${esc(D.corte)}</div><h2>Programación consolidada</h2></div>
       <span class="grow"></span><button class="btn sm" id="bRefCons" title="Volver a leer la programación desde el Google Sheet">↻ Actualizar</button>
@@ -1613,10 +1613,10 @@ function pintarConsolidado(){
     </div>
     ${g === 'arbol' ? `<div class="cons-arb"><button class="btn sm" id="cExpTodo">⊞ Expandir todo</button><button class="btn sm" id="cConTodo">⊟ Contraer todo</button></div>` : ''}
     <section class="panel"><div class="tbl-wrap" style="max-height:70vh;overflow:auto"><table class="g cons">
-      <thead><tr><th class="lin" rowspan="2">${esc(nombreDim)}</th><th rowspan="2">PIA</th><th rowspan="2">PIM</th>${H.r1}</tr><tr class="r2">${H.r2}</tr></thead>
+      <thead><tr><th class="lin" rowspan="2">${esc(nombreDim)}</th><th rowspan="2">PIM</th>${H.r1}</tr><tr class="r2">${H.r2}</tr></thead>
       <tbody>${filasT.length ? filasT.map(filaHTML).join('')
-        : `<tr><td class="l" colspan="${3 + nColMef()}"><div class="empty">No hay clasificadores con esos filtros.</div></td></tr>`}</tbody>
-      <tfoot><tr><td class="lin">Total (${nGr} ${esc(plDim)})</td><td class="num">${fmt(raiz.pia)}</td><td class="num">${fmt(raiz.pim)}</td>${tdMef(raiz)}</tr></tfoot>
+        : `<tr><td class="l" colspan="${2 + nColMef()}"><div class="empty">No hay clasificadores con esos filtros.</div></td></tr>`}</tbody>
+      <tfoot><tr><td class="lin">Total (${nGr} ${esc(plDim)})</td><td class="num">${fmt(raiz.pim)}</td>${tdMef(raiz)}</tr></tfoot>
     </table></div></section>
     <p class="meta">La versión «Vigente + pedidos enviados» muestra lo aprobado por OPP y, donde una unidad tiene un pedido enviado pendiente de revisión, su propuesta. El Excel descarga cada clasificador que cumple los filtros, con los 12 meses (${MES[0]}–${MES[ini - 1] || ''} = devengado), y en la hoja «Meta MEF y avance» la meta MEF mensual con el devengado y el % logrado de cada trimestre.</p>
     <p class="meta"><b>% logrado</b> = devengado ÷ meta MEF del trimestre. En el trimestre en curso se cuenta el devengado registrado hasta la fecha de corte. Usa ⊞ en la cabecera de cada trimestre para ver la meta MEF y el devengado de cada mes.</p>`;
@@ -1708,16 +1708,16 @@ async function descargarExcel(){
     return [].concat(...[0, 1, 2].map(j => [rx(x.mef[q * 3 + j]), rx(x.dv[q * 3 + j])])).concat([rx(me), rx(dv), pcx(dv, me)]); }))
     .concat([rx(sumR(x.mef, 0, 12)), rx(sumR(x.dv, 0, 12)), pcx(sumR(x.dv, 0, 12), sumR(x.mef, 0, 12))]);
   // Hoja «Resumen por proyecto»: Proyecto › Componente (finalidad) › Unidad orgánica, todo abierto
-  const arb = consArbol(filas), cabRes = ['Nivel', 'Proyecto / Componente / Unidad orgánica', 'PIA', 'PIM'].concat(cabM), cuerpoRes = [];
+  const arb = consArbol(filas), cabRes = ['Nivel', 'Proyecto / Componente / Unidad orgánica', 'PIM'].concat(cabM), cuerpoRes = [];
   const NIV = ['Proyecto', 'Componente', 'Unidad orgánica'];
   const recorre = nd => nd.orden.slice().sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric:true })).forEach(k => { const h = nd.hijos[k];
-    cuerpoRes.push([NIV[h.nivel], '    '.repeat(h.nivel) + h.etq, rx(h.pia), rx(h.pim)].concat(valM(h))); recorre(h); });
+    cuerpoRes.push([NIV[h.nivel], '    '.repeat(h.nivel) + h.etq, rx(h.pim)].concat(valM(h))); recorre(h); });
   recorre(arb);
-  cuerpoRes.push(['Total', 'Total inversiones', rx(arb.pia), rx(arb.pim)].concat(valM(arb)));
+  cuerpoRes.push(['Total', 'Total inversiones', rx(arb.pim)].concat(valM(arb)));
   // Hoja «Meta MEF y avance»: una fila por clasificador
-  const cabAv = ['Proyecto', 'Componente (finalidad)', 'Unidad orgánica', 'Órgano', 'SEC_FUNC', 'Clasificador', 'Fuente de financiamiento', 'PIA', 'PIM'].concat(cabM);
+  const cabAv = ['Proyecto', 'Componente (finalidad)', 'Unidad orgánica', 'Órgano', 'SEC_FUNC', 'Clasificador', 'Fuente de financiamiento', 'PIM'].concat(cabM);
   const cuerpoAv = filas.map(r => { const x = { mef: MES.map((_, i) => r.mef ? +r.mef[i] || 0 : 0), dv: MES.map((_, i) => r.dv ? +r.dv[i] || 0 : 0) };
-    return [codNom(r.pp), codNom(r.fi), r.uo, r.og, pad4(r.sf), r.cl, r.fu, rx(+r.pia || 0), rx(r.pim)].concat(valM(x)); });
+    return [codNom(r.pp), codNom(r.fi), r.uo, r.og, pad4(r.sf), r.cl, r.fu, rx(r.pim)].concat(valM(x)); });
   const cab = ['SEC_FUNC','Clasificador','Fuente de financiamiento'].concat(MES.map((m, i) => m + (i < D.ini ? ' (devengado)' : ' (programado)'))).concat(['Total anual','Saldo declarado','Unidad orgánica','Órgano','Concepto','Estado']).concat(cabMef);
   const cuerpo = filas.map(r => { const P = consProg(r), tot = P.m.reduce((a, b) => a + b, 0);
     const mef = !hayMef ? [] : [r.ti || ''].concat(...mAb.map(i => { if (!r.mef) return ['', '', '', ''];
@@ -1802,10 +1802,7 @@ function iniciarDemo(){
       lineas: detalle[id].length, variacion: detalle[id].reduce((a, d) => { const L = base.find(b => b.id === d.id); let s = 0; for (let i = ini; i < 12; i++) s += Math.abs(d.m[i] - (L ? L.po[i] : 0)); return a + s; }, 0),
       revisor: com ? 'opp' : '', fechaRev: com ? '27/09/2026 09:05' : '', comentario: com || '' });
   }
-  ejemplo('DSP', 'ENVIADO', 4, 'Ejemplo: la valorización de la obra se traslada a diciembre por ampliación de plazo aprobada.', '', true);
-  ejemplo('SAPLI', 'ENVIADO', 3, 'Ejemplo: retraso en la suscripción de contratos de consultoría; se reprograma el devengado al último trimestre.');
-  ejemplo('SITF', 'OBSERVADO', 2, 'Ejemplo: ajuste del cronograma de pagos del contrato de concesión.', 'Ejemplo: sustentar con el cronograma de pagos vigente; el incremento sobre la meta MEF de diciembre no está justificado.');
-  ejemplo('SEP', 'BORRADOR', 2, '');
+  // Sin pedidos de ejemplo: el proceso empieza de cero (todas las unidades «Sin iniciar»)
 
   // Nota de modificación de ejemplo (SAPLI), con la misma forma que el Anexo remitido formalmente
   const notas = [];
