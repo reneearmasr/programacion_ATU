@@ -1840,7 +1840,7 @@ function iniciarDemo(){
   const D = window.DEMO; if (!D) return;
   const cfg = Object.assign({ soloInv: true }, D.config);
   cfg.proceso = 'Reprogramación de inversiones ' + cfg.anio + ' – ' + ['I', 'II', 'III', 'IV'][Math.ceil(cfg.mesInicio / 3) - 1] + ' trimestre';
-  if (cfg.mesInicio >= 10) cfg.fut = { anio: String(+cfg.anio + 1), trim: 'I', periodo: (+cfg.anio + 1) + '-T1', meses: ['Ene', 'Feb', 'Mar'] };
+  if (+String(cfg.fechaCorte || '').slice(5, 7) === 12) cfg.fut = { anio: String(+cfg.anio + 1), trim: 'I', periodo: (+cfg.anio + 1) + '-T1', meses: ['Ene', 'Feb', 'Mar'] };
   const base = cfg.soloInv ? D.base.filter(b => b.ti === 'Inversiones' && (b.pim > 0 || b.dva > 0 || (b.mef && b.mef.some(Boolean)))) : D.base;
   base.forEach(b => { b.dsc = E12(); b.sd = 0; });
   const envios = [], detalle = {}, vig = {};
