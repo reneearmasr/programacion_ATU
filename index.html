@@ -510,19 +510,43 @@ function pintarLogin(msg){
   </section>
   <form class="login" id="fLogin" autocomplete="on">
     <h2>Ingresar</h2>
-    <p>Usa el usuario y la clave que OPP asignó a tu unidad orgánica.</p>
-    <label class="f" for="u">Usuario<input class="inp" id="u" name="u" autocomplete="username" required placeholder="p. ej. sitf"></label>
-    <label class="f" for="c">Clave<input class="inp" id="c" name="c" type="password" autocomplete="current-password" required></label>
+    <div id="lgCampos"><p class="meta">Cargando…</p></div>
     ${msg ? `<div class="banner bad">${esc(msg)}</div>` : ''}
-    <button class="btn primary" type="submit">Ingresar</button>
-    ${REAL ? '' : `<div class="hint">Demostración: usuario <code>sitf</code> (o cualquier sigla de unidad con inversiones, p. ej. <code>sapli</code>, <code>dsp</code>) o <code>opp</code> para la vista de revisión. Clave <code>demo</code>.</div>`}
+    <button class="btn primary" type="submit" id="lgBtn" disabled>Ingresar</button>
   </form>
   </div>`;
+  const campos = $('#lgCampos');
+  // Ingreso libre: se elige la unidad orgánica u OPP. Si OPP lo desactiva (Config ACCESO_LIBRE = NO), se pide usuario y clave.
+  const conClave = () => {
+    S.libre = false;
+    campos.innerHTML = `<p>Usa el usuario y la clave que OPP asignó a tu unidad orgánica.</p>
+      <label class="f" for="u">Usuario<input class="inp" id="u" name="u" autocomplete="username" required placeholder="p. ej. sitf"></label>
+      <label class="f" for="c">Clave<input class="inp" id="c" name="c" type="password" autocomplete="current-password" required></label>`;
+    $('#lgBtn').disabled = false;
+  };
+  const libre = r => {
+    S.libre = true;
+    const porOg = {}; (r.unidades || []).forEach(u => { (porOg[u.og || '—'] = porOg[u.og || '—'] || []).push(u.uo); });
+    let ult = ''; try { ult = localStorage.getItem('poi_perfil') || ''; } catch (e) {}
+    campos.innerHTML = `<p>Elige tu unidad orgánica para registrar su programación, u <b>OPP</b> para revisar y controlar todo.</p>
+      <label class="f" for="perfil">¿Quién ingresa?<select class="inp" id="perfil" required>
+        <option value="">— Elige —</option>
+        <option value="OPP" ${ult === 'OPP' ? 'selected' : ''}>OPP · Oficina de Planeamiento y Presupuesto (revisa y controla todo)</option>
+        ${Object.keys(porOg).sort().map(og => `<optgroup label="${esc(og)}">${porOg[og].sort().map(uo => `<option value="${esc(uo)}" ${ult === uo ? 'selected' : ''}>${esc(uo)}${og !== uo ? ' · ' + esc(og) : ''}</option>`).join('')}</optgroup>`).join('')}
+      </select></label>`;
+    $('#lgBtn').disabled = false;
+  };
+  (async () => { try { const r = await call('api_ingreso'); if (r && r.libre) libre(r); else conClave(); } catch (e) { conClave(); } })();
   $('#fLogin').addEventListener('submit', async ev => {
     ev.preventDefault();
+    let r;
     busy(true);
     try {
-      const r = await call('api_login', $('#u').value, $('#c').value);
+      if (S.libre){
+        const p = $('#perfil').value; if (!p) throw new Error('Elige tu unidad orgánica u OPP.');
+        try { localStorage.setItem('poi_perfil', p); } catch (e) {}
+        r = await call('api_entrar', p);
+      } else r = await call('api_login', $('#u').value, $('#c').value);
       if (!r) throw new Error('El servidor no devolvió datos. Revisa la hoja Config y vuelve a implementar.');
       Object.assign(S, { token:r.token, sesion:r.sesion, config:r.config, unidades:r.unidades, anio:r.config.anio });
       S.ver = r.sesion.rol === 'OPP' ? 'bandeja' : 'form';
@@ -539,7 +563,7 @@ function pintarCabecera(){
   const c = S.config, s = S.sesion;
   $('#who').hidden = false;
   const ini2 = String(s.rol === 'OPP' ? 'OPP' : (s.nombre.split('/').pop() || s.usuario)).trim().slice(0, 2).toUpperCase();
-  $('#who').innerHTML = `<span class="av" aria-hidden="true">${esc(ini2)}</span><span class="wn"><b>${esc(s.nombre)}</b><small>${s.rol === 'OPP' ? 'OPP · Revisión' : 'Unidad orgánica'}</small></span><button class="btn-ghost" id="bSalir">Salir</button>`;
+  $('#who').innerHTML = `<span class="av" aria-hidden="true">${esc(ini2)}</span><span class="wn"><b>${esc(s.nombre)}</b><small>${s.rol === 'OPP' ? 'OPP · Revisión' : 'Unidad orgánica'}</small></span><button class="btn-ghost" id="bSalir" title="${S.libre ? 'Volver a elegir unidad orgánica u OPP' : 'Cerrar sesión'}">${S.libre ? 'Cambiar' : 'Salir'}</button>`;
   $('#bSalir').onclick = salir;
   const ini = c.mesInicio;
   $('#strip').hidden = false;
@@ -1909,6 +1933,14 @@ function iniciarDemo(){
   })();
 
   MOCK = {
+    api_ingreso(){ return { libre: true, unidades: uni.map(x => ({ uo: x.uo, og: x.og })) }; },
+    api_entrar(p){
+      const s = p === 'OPP' ? { usuario:'opp', nombre:'Oficina de Planeamiento y Presupuesto', rol:'OPP', uos: uni.map(x => x.uo) }
+        : (x => x ? { usuario: x.uo.toLowerCase(), nombre: x.og + ' / ' + x.uo, rol:'AREA', uos:[x.uo] } : null)(uni.find(x => x.uo === p));
+      if (!s) throw new Error('Elige una unidad orgánica de la lista.');
+      const t = 'demo' + Math.random(); sesiones[t] = s;
+      return { token:t, sesion:s, config:cfg, unidades: uni.filter(x => s.uos.includes(x.uo)) };
+    },
     api_login(u, c){
       u = String(u||'').trim().toLowerCase();
       if (String(c).trim().toLowerCase() !== 'demo') throw new Error('Usuario o clave incorrectos. En la demostración la clave es demo.');
