@@ -183,6 +183,7 @@ table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 .mes-fut{background:color-mix(in srgb,#7C3AED 10%,var(--surface2)) !important;color:var(--ink) !important}
 td.fcol{background:color-mix(in srgb,#7C3AED 4%,var(--surface))} .fut0{border-left:2px solid #7C3AED !important}
 .kpi.fut{border-left:4px solid #7C3AED}
+.btn-link{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit;font-size:13px}
 .mefx{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;font-family:var(--mono);white-space:nowrap}
 .mefx b{font-weight:600}
 .chip.mef{background:#7A5A00}
@@ -536,7 +537,18 @@ function pintarLogin(msg){
       </select></label>`;
     $('#lgBtn').disabled = false;
   };
-  (async () => { try { const r = await call('api_ingreso'); if (r && r.libre) libre(r); else conClave(); } catch (e) { conClave(); } })();
+  // Si el servidor no responde (p. ej. Apps Script sin la versión nueva publicada) se dice por qué, en lugar de pedir clave sin explicación
+  const cargarIngreso = async () => {
+    campos.innerHTML = '<p class="meta">Cargando unidades orgánicas…</p>'; $('#lgBtn').disabled = true;
+    try { const r = await call('api_ingreso'); if (r && r.libre) libre(r); else conClave(); }
+    catch (e) {
+      campos.innerHTML = `<div class="banner bad">No se pudo cargar la lista de unidades orgánicas: ${esc((e && e.message) || 'sin respuesta del servidor')}.
+        Si OPP acaba de actualizar el aplicativo, falta publicar la <b>Nueva versión</b> del Apps Script.</div>
+        <p style="margin-top:10px"><button type="button" class="btn sm" id="lgReint">↻ Reintentar</button> <button type="button" class="btn-link" id="lgClave">Ingresar con usuario y clave</button></p>`;
+      $('#lgReint').onclick = cargarIngreso; $('#lgClave').onclick = conClave;
+    }
+  };
+  cargarIngreso();
   $('#fLogin').addEventListener('submit', async ev => {
     ev.preventDefault();
     let r;
