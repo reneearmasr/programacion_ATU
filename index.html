@@ -36,7 +36,7 @@
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
 button,input,select,textarea{font:inherit;color:inherit}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
-.wrap{max-width:1440px;margin:0 auto;padding-inline:20px}
+.wrap{max-width:2400px;margin:0 auto;padding-inline:clamp(16px,2vw,32px)}   /* usa todo el ancho de la pantalla */
 
 /* Cabecera */
 .top{background:var(--navy);color:#fff;padding-top:env(safe-area-inset-top,0px)}
@@ -163,7 +163,7 @@ table.g tr.sfh td.sdc,table.g tfoot td.sdc{background:var(--warn-soft)}
 .count{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 14px;display:flex;gap:10px;align-items:center;cursor:pointer}
 .count b{font-family:var(--mono);font-size:18px;font-weight:500}
 .count[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-.split{display:grid;grid-template-columns:minmax(280px,380px) 1fr;gap:16px;align-items:start}
+.split{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);gap:16px;align-items:start}
 @media (max-width:980px){.split{grid-template-columns:1fr}}
 .list{display:flex;flex-direction:column}
 .item{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;text-align:left;background:transparent;border-left:0;border-right:0;border-top:0}
@@ -1244,7 +1244,7 @@ function detalleEnvio(){
     ${e.comentario ? `<div class="banner ${e.estado==='APROBADO'?'ok':'bad'}"><b>Revisión OPP (${esc(e.revisor)}, ${esc(e.fechaRev)})</b><p>${esc(e.comentario)}</p></div>` : ''}
     <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}${F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">${F.trim} trim. · monto y detalle</span></th>`).join('') : ''}<th>Anual ${esc(S.config.anio)}<br><span class="thn">ejec. + prog.</span></th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${puede ? `<div class="decide"><label class="f" for="com">Comentario para el área (obligatorio si observas)<textarea id="com" placeholder="Ej.: sustentar el adelanto de diciembre con el cronograma del contrato"></textarea></label>
-      <div class="row"><button class="btn ok" id="bAprobar">Aprobar y actualizar POI vigente</button><button class="btn bad" id="bObservar">Observar y devolver</button></div></div>` : ''}
+      <div class="row"><button class="btn ok" id="bAprobar">Aprobar y actualizar programación vigente</button><button class="btn bad" id="bObservar">Observar y devolver</button></div></div>` : ''}
   </div>`;
 }
 async function revisar(dec){
