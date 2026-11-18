@@ -1093,7 +1093,9 @@ async function guardar(enviar){
   S.lineas.forEach(L => {
     if (!modificada(L)) return;
     const p = propuesta(L), d = descr(L), sd = sdVal(L), just = (S.edits[L.id].just || '').trim();
-    if (p.some(v => v < 0)) errs.push(`${et(L)}: hay montos negativos.`);
+    // Solo se validan los meses editables: en los meses cerrados va el devengado del SIAF, que puede ser negativo por una rebaja o reversión
+    const neg = MES.filter((m, i) => i >= ini && p[i] < 0);
+    if (neg.length) errs.push(`${et(L)}: hay montos negativos en ${neg.join(', ')}.`);
     if (sd < 0) errs.push(`${et(L)}: el saldo declarado no puede ser negativo.`);
     const libre = Math.max(0, L.pim - p.reduce((a,b)=>a+b,0));
     if (sd - libre > 1) errs.push(`${et(L)}: el saldo declarado (${fmt(sd)}) supera el PIM que queda sin programar (${fmt(libre)}).`);
