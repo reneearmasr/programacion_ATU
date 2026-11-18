@@ -185,6 +185,7 @@ table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 td.fcol{background:color-mix(in srgb,#7C3AED 4%,var(--surface))} .fut0{border-left:2px solid #7C3AED !important}
 .kpi.fut{border-left:4px solid #7C3AED}
 .kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)}
+.cons-f.av-f{grid-template-columns:repeat(5,minmax(0,1fr));border-bottom:1px solid var(--line)} @media (max-width:1000px){.cons-f.av-f{grid-template-columns:1fr 1fr}}
 table.g td.av-me,table.g th.av-me{background:color-mix(in srgb,var(--warn) 6%,var(--surface))} table.g td.av-aj,table.g th.av-aj{background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
 .pill.al-bad{background:color-mix(in srgb,var(--bad) 14%,var(--surface));color:var(--bad)} .pill.al-warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));color:var(--warn)} .pill.al-ok{background:color-mix(in srgb,var(--ok) 14%,var(--surface));color:var(--ok)}
 .barra{position:relative;height:8px;background:var(--surface2);border-radius:4px;margin:4px 0 3px;min-width:90px} .barra span{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
@@ -734,7 +735,7 @@ function pintar(){
         <div class="sub">${esc(u.og)} · Sectorista OPP: ${esc(u.sectorista || '—')}</div>
         <h2>${S.unidades.length > 1 ? `<select class="inp" id="selUO" aria-label="Unidad orgánica">${S.unidades.map(x => `<option value="${esc(x.uo)}" ${x.uo===S.uo?'selected':''}>${esc(x.uo)} — ${esc(x.og)}</option>`).join('')}</select>` : esc(S.uo)}</h2>
       </div>
-      <span class="pill st-${est.split(' ')[0]}">${esc(est)}</span>
+      <span class="pill st-${est.split(' ')[0]}">${esc(etqEstado(est))}</span>
       <span class="sub">${S.envio ? `Pedido ${esc(S.envio.id)} · ${S.envio.enviado ? 'enviado ' + esc(S.envio.enviado) : 'creado ' + esc(S.envio.creado)}` : 'Aún no hay pedido en este proceso'}</span>
       <span class="grow"></span>
       <button class="btn btn-notas" id="bNotas" title="Solicitud de nota de modificación presupuestaria (Anexo N° 02)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v6"/><path d="M9 15h6"/></svg>Nota de modificación presupuestal</button>
@@ -1153,6 +1154,7 @@ async function abrirOPP(){
   pintarOPP();
 }
 const ESTADOS = ['ENVIADO','OBSERVADO','APROBADO','BORRADOR'];
+const etqEstado = e => e === 'SIN INICIAR' ? 'SIN ENVIAR' : e;   // «Sin iniciar» se muestra como «Sin enviar»
 /* ===================== ALERTAS DE AVANCE ENTRE CIERRES (OPP) =====================
    Cada carga del SIAF guarda una foto del devengado (hoja Cortes). Aquí se compara el cierre elegido con otro anterior,
    por Proyecto, SEC_FUNC o Concepto, contra lo programado por las áreas para el mes del cierre:
@@ -1381,29 +1383,44 @@ function pintarOPP(){
   const ses = [...new Set(U.map(u => u.sectorista))].filter(Boolean).sort();
   let body = '';
   if (S.ver === 'avance'){
-    // Mes actual (primer mes editable): meta MEF = programación inicial, incrementos, caídas y programación ajustada que propone el área
-    const M = Math.min(11, (S.config.mesInicio || 1) - 1), MESL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+    // Filtros: Proyecto, Componente (finalidad), Concepto 2, Concepto 1 y Mes. Columnas del mes elegido: meta MEF (programación inicial),
+    // incrementos, caídas y programación ajustada que propone el área. PIM y montos se calculan con los clasificadores que cumplen los filtros.
+    const A = S.av = S.av || { pp: '', fi: '', c3: '', c2: '', mes: null };
+    const ini = Math.max(0, (S.config.mesInicio || 1) - 1), M = A.mes == null ? Math.min(11, ini) : A.mes;
+    const MESL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
     if (!S.cons.data && !S.avCarga){ S.avCarga = true;
       run('api_consolidado').then(d => { S.cons.data = d; }).catch(() => {}).finally(() => { S.avCarga = false; if (S.ver === 'avance') pintarOPP(); }); }
+    const FIL = [{ k: 'pp', n: 'Proyecto' }, { k: 'fi', n: 'Componente (finalidad)' }, { k: 'c3', n: 'Concepto 2' }, { k: 'c2', n: 'Concepto 1' }];
+    const clave = (k, r) => k === 'pp' || k === 'fi' ? codNom(r[k]) : String(r[k] || '');
+    const filtradas = exc => (S.cons.data ? S.cons.data.filas : []).filter(r => FIL.every(f => f.k === exc || !A[f.k] || clave(f.k, r) === A[f.k]));
+    const opciones = k => [...new Set(filtradas(k).map(r => clave(k, r)).filter(Boolean))].sort((a, b) => cmpTxt(a, b));
+    const hayF = FIL.some(f => A[f.k]);
     const mm = {};
-    if (S.cons.data) S.cons.data.filas.forEach(r => { const x = mm[r.uo] = mm[r.uo] || { me: 0, inc: 0, cai: 0, aj: 0 };
-      const ini = r.mef ? +r.mef[M] || 0 : +(r.pv || r.v)[M] || 0, aj = r.p ? +r.p[M] || 0 : +r.v[M] || 0, d = aj - ini;
-      x.me += ini; x.aj += aj; if (d >= 10) x.inc += d; else if (d <= -10) x.cai -= d; });   // diferencias < S/ 10: redondeo del SIAF
-    const ms = uo => S.cons.data ? (mm[uo] || { me: 0, inc: 0, cai: 0, aj: 0 }) : null;
+    filtradas().forEach(r => { const x = mm[r.uo] = mm[r.uo] || { pim: 0, me: 0, inc: 0, cai: 0, aj: 0 };
+      const base = r.mef ? +r.mef[M] || 0 : +(r.pv || r.v)[M] || 0;
+      const aj = M < ini ? +(r.pv || r.v)[M] || 0 : (r.p ? +r.p[M] || 0 : +r.v[M] || 0), d = aj - base;
+      x.pim += +r.pim || 0; x.me += base; x.aj += aj; if (d >= 10) x.inc += d; else if (d <= -10) x.cai -= d; });   // diferencias < S/ 10: redondeo del SIAF
+    const ms = uo => S.cons.data ? (mm[uo] || { pim: 0, me: 0, inc: 0, cai: 0, aj: 0 }) : null;
     const nd = '<span class="meta">…</span>';
-    const Uv = U.filter(u => !S.opp.se || u.sectorista === S.opp.se);
-    const tot = Uv.reduce((t, u) => { const x = ms(u.uo); if (x){ t.me += x.me; t.inc += x.inc; t.cai += x.cai; t.aj += x.aj; } t.mov += u.envio ? +u.envio.variacion || 0 : 0; t.pim += +u.pim || 0; return t; }, { me: 0, inc: 0, cai: 0, aj: 0, mov: 0, pim: 0 });
-    body = `<section class="panel"><div class="tools"><b class="grow">Estado de cada unidad en «${esc(S.config.proceso)}»</b>
-      <select class="inp" id="fse"><option value="">Todos los sectoristas</option>${ses.map(s => `<option ${s===S.opp.se?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
-      <div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Unidad</th><th class="l">Órgano</th><th class="l">Sectorista</th><th>Líneas</th><th>PIM</th><th class="l">Estado</th><th class="l">Último movimiento</th><th class="av-me">${MESL[M]} MEF<br><span class="thn">programación inicial</span></th><th class="av-me">Incrementos<br><span class="thn">${MES[M]}</span></th><th class="av-me">Caídas<br><span class="thn">${MES[M]}</span></th><th>Monto movido</th><th class="av-aj">Programación ajustada<br><span class="thn">${MES[M]} · propuesta del área</span></th><th></th></tr></thead><tbody>
-      ${Uv.map(u => { const x = ms(u.uo); return `<tr><td class="l"><b>${esc(u.uo)}</b></td><td class="l">${esc(u.og)}</td><td class="l">${esc(u.sectorista)}</td><td class="num">${u.lineas}</td><td class="num">${fmt(u.pim)}</td>
-        <td class="l"><span class="pill st-${u.estado.split(' ')[0]}">${esc(u.estado)}</span></td><td class="l">${u.envio ? esc(u.envio.enviado || u.envio.creado) : '—'}</td><td class="num av-me">${x ? fmt(x.me) : nd}</td><td class="num av-me diff-up">${x ? (x.inc > .5 ? '+' + fmt(x.inc) : '0') : nd}</td><td class="num av-me diff-dn">${x ? (x.cai > .5 ? '−' + fmt(x.cai) : '0') : nd}</td>
+    const Uv = U.filter(u => !hayF || !S.cons.data || mm[u.uo]).slice().sort((a, b) => cmpTxt(a.og, b.og) || cmpTxt(a.uo, b.uo));
+    const tot = Uv.reduce((t, u) => { const x = ms(u.uo); if (x){ t.pim += x.pim; t.me += x.me; t.inc += x.inc; t.cai += x.cai; t.aj += x.aj; } else t.pim += +u.pim || 0; t.mov += u.envio ? +u.envio.variacion || 0 : 0; return t; }, { pim: 0, me: 0, inc: 0, cai: 0, aj: 0, mov: 0 });
+    const etqM = M < ini ? 'mes cerrado · vigente' : 'propuesta del área';
+    body = `<section class="panel"><div class="tools"><b class="grow">Estado de cada unidad en «${esc(S.config.proceso)}»</b></div>
+      <div class="cons-f av-f">
+        ${FIL.map(f => `<label class="f">${f.n}<select class="inp" data-avf="${f.k}"><option value="">Todos</option>${opciones(f.k).map(o => `<option value="${esc(o)}" ${o === A[f.k] ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`).join('')}
+        <label class="f">Mes<select class="inp" id="avMes">${MESL.map((m, k) => `<option value="${k}" ${k === M ? 'selected' : ''}>${m}${k === ini ? ' (mes actual)' : ''}</option>`).join('')}</select></label>
+        ${hayF ? '<div class="cons-x"><button class="ico" id="avLimpiar">Limpiar filtros</button></div>' : ''}
+      </div>
+      <div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Órgano</th><th class="l">Unidad orgánica</th><th>PIM</th><th class="l">Estado</th><th class="l">Último movimiento</th><th class="av-me">${MESL[M]} MEF<br><span class="thn">programación inicial</span></th><th class="av-me">Incrementos<br><span class="thn">${MES[M]}</span></th><th class="av-me">Caídas<br><span class="thn">${MES[M]}</span></th><th>Monto movido</th><th class="av-aj">Programación ajustada<br><span class="thn">${MES[M]} · ${etqM}</span></th><th></th></tr></thead><tbody>
+      ${Uv.map(u => { const x = ms(u.uo); return `<tr><td class="l">${esc(u.og)}</td><td class="l"><b>${esc(u.uo)}</b></td><td class="num">${fmt(x ? x.pim : u.pim)}</td>
+        <td class="l"><span class="pill st-${u.estado.split(' ')[0]}">${esc(etqEstado(u.estado))}</span></td><td class="l">${u.envio ? esc(u.envio.enviado || u.envio.creado) : '—'}</td><td class="num av-me">${x ? fmt(x.me) : nd}</td><td class="num av-me diff-up">${x ? (x.inc > .5 ? '+' + fmt(x.inc) : '0') : nd}</td><td class="num av-me diff-dn">${x ? (x.cai > .5 ? '−' + fmt(x.cai) : '0') : nd}</td>
         <td class="num">${u.envio ? fmt(u.envio.variacion) : '—'}</td><td class="num av-aj"><b>${x ? fmt(x.aj) : nd}</b></td>
-        <td><div class="acts">${u.envio && u.envio.estado !== 'BORRADOR' ? `<button class="ico" data-env="${esc(u.envio.id)}">Revisar</button>` : ''}<button class="ico" data-uo="${esc(u.uo)}">Formulario</button></div></td></tr>`; }).join('')}
-      </tbody><tfoot><tr><td class="l" colspan="4"><b>Total (${Uv.length} unidades)</b></td><td class="num">${fmt(tot.pim)}</td><td></td><td></td>
-        <td class="num av-me">${S.cons.data ? fmt(tot.me) : nd}</td><td class="num av-me diff-up">${S.cons.data ? '+' + fmt(tot.inc) : nd}</td><td class="num av-me diff-dn">${S.cons.data ? '−' + fmt(tot.cai) : nd}</td>
+        <td><div class="acts">${u.envio && u.envio.estado !== 'BORRADOR' ? `<button class="ico" data-env="${esc(u.envio.id)}">Revisar</button>` : ''}<button class="ico" data-uo="${esc(u.uo)}">Formulario</button></div></td></tr>`; }).join('')
+        || `<tr><td class="l" colspan="11"><div class="empty">Ninguna unidad tiene clasificadores con esos filtros.</div></td></tr>`}
+      </tbody><tfoot><tr><td class="l" colspan="2"><b>Total (${Uv.length} unidades)</b></td><td class="num">${fmt(tot.pim)}</td><td></td><td></td>
+        <td class="num av-me">${S.cons.data ? fmt(tot.me) : nd}</td><td class="num av-me diff-up">${S.cons.data ? (tot.inc > .5 ? '+' + fmt(tot.inc) : '0') : nd}</td><td class="num av-me diff-dn">${S.cons.data ? (tot.cai > .5 ? '−' + fmt(tot.cai) : '0') : nd}</td>
         <td class="num">${fmt(tot.mov)}</td><td class="num av-aj"><b>${S.cons.data ? fmt(tot.aj) : nd}</b></td><td></td></tr></tfoot></table></div>
-      <p class="meta" style="margin:10px 14px 12px"><b>${MESL[M]} MEF</b>: programación inicial del mes (meta MEF, antes de la propuesta del área). <b>Programación ajustada</b>: la que propone el área (pedido en borrador, enviado u observado) o, si no tiene pedido en curso, la vigente aprobada. Ajustada = MEF + incrementos − caídas (no se cuentan diferencias menores a S/ 10 por clasificador, que son redondeos del SIAF).</p></section>`;
+      <p class="meta" style="margin:10px 14px 12px"><b>${MESL[M]} MEF</b>: programación inicial del mes (meta MEF, antes de la propuesta del área). <b>Programación ajustada</b>: ${M < ini ? 'en un mes ya cerrado, la programación vigente aprobada' : 'la que propone el área (pedido en borrador, enviado u observado) o, si no tiene pedido en curso, la vigente aprobada'}. Ajustada = MEF + incrementos − caídas (no se cuentan diferencias menores a S/ 10 por clasificador, que son redondeos del SIAF). PIM y montos consideran solo los clasificadores que cumplen los filtros; «Monto movido» es el total del pedido de la unidad.</p></section>`;
   } else {
     const lista = E.filter(e => (!S.opp.estado || e.estado === S.opp.estado) && e.estado !== 'BORRADOR' && (!S.opp.se || (U.find(u => u.uo === e.uo) || {}).sectorista === S.opp.se));
     body = `<div class="split">
@@ -1413,13 +1430,16 @@ function pintarOPP(){
       <section class="panel" id="det">${S.opp.det ? detalleEnvio() : '<div class="empty">Elige un pedido de la lista para revisarlo.</div>'}</section></div>`;
   }
   $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
-    <div class="counts">${['SIN INICIAR','BORRADOR'].concat(ESTADOS.filter(x => x !== 'BORRADOR')).map(k => `<button class="count" data-est="${k}" aria-pressed="${S.ver==='bandeja' && S.opp.estado===k}"><b>${cnt[k] || 0}</b><span class="pill st-${k.split(' ')[0]}">${k}</span></button>`).join('')}
+    <div class="counts">${['SIN INICIAR','BORRADOR'].concat(ESTADOS.filter(x => x !== 'BORRADOR')).map(k => `<button class="count" data-est="${k}" aria-pressed="${S.ver==='bandeja' && S.opp.estado===k}"><b>${cnt[k] || 0}</b><span class="pill st-${k.split(' ')[0]}">${etqEstado(k)}</span></button>`).join('')}
     <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">de ${U.length} unidades orgánicas</span>
     <button class="btn sm btn-ref" id="bRefrescar" title="Volver a leer los pedidos desde el Google Sheet">↻ Actualizar</button></div>
     ${body}`;
   bindTabs();
   $('#bRefrescar').onclick = async () => { await abrirOPP(); if (S.opp.sel && S.opp.det){ S.opp.det = null; await verEnvio(S.opp.sel); } toast('Datos actualizados.'); };
   const fse = $('#fse'); if (fse) fse.onchange = () => { S.opp.se = fse.value; pintarOPP(); };
+  document.querySelectorAll('[data-avf]').forEach(el => el.onchange = () => { S.av[el.dataset.avf] = el.value; pintarOPP(); });
+  const avm = $('#avMes'); if (avm) avm.onchange = () => { S.av.mes = +avm.value; pintarOPP(); };
+  const avl = $('#avLimpiar'); if (avl) avl.onclick = () => { Object.assign(S.av, { pp: '', fi: '', c3: '', c2: '' }); pintarOPP(); };
   document.querySelectorAll('.count').forEach(b => b.onclick = () => {
     const k = b.dataset.est;
     if (k === 'SIN INICIAR' || k === 'BORRADOR'){ S.ver = 'avance'; } else { S.ver = 'bandeja'; S.opp.estado = k; }
@@ -2356,7 +2376,7 @@ function iniciarDemo(){
         const e = envios.filter(x => x.uo === u.uo && x.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(x.estado)).pop();
         const pend = {}; if (e) (detalle[e.id] || []).forEach(d => { pend[d.id] = d; if (!porId[d.id]){ const ref = base.find(b => b.uo === u.uo && b.sf == d.sf); if (ref){ const N = nueva(ref, d.cl, d.fu); porId[N.id] = N; ls.push(N); } } });
         ls.forEach(L => { const p = pend[L.id];
-          filas.push({ id:L.id, pv:L.po.slice(), og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', pp:L.pp || '', pia:L.pia || 0, mef:L.mef || null, dv:L.dv, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
+          filas.push({ id:L.id, pv:L.po.slice(), og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, c3:L.c3 || '', ti:L.ti || '', pp:L.pp || '', pia:L.pia || 0, mef:L.mef || null, dv:L.dv, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
             v: MES.map((_, i) => i < ini ? L.dv[i] : L.po[i]), sd:+L.sd || 0, ap:L.vigenteDe ? 1 : 0, nv:L.nueva ? 1 : 0,
             p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '', fv: L.f || Z3(), pf: p ? (p.f || Z3()) : null }); });
       });
