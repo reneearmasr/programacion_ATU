@@ -437,7 +437,7 @@ const GAS = typeof google !== 'undefined' && google.script && google.script.run;
 const API = !GAS && typeof window.API_URL === 'string' && /^https:\/\/script\.google\.com\//.test(window.API_URL) ? window.API_URL : '';
 const REAL = GAS || !!API;
 // Lecturas que se pueden repetir sin riesgo si Google falla un momento
-const REINTENTABLES = ['api_ping','api_login','api_cargarUO','api_resumenOPP','api_verEnvio','api_consolidado','api_notasUO','api_resumenNotas'];
+const REINTENTABLES = ['api_ping','api_ingreso','api_entrar','api_contexto','api_historial','api_fotoHistorial','api_cortes','api_login','api_cargarUO','api_resumenOPP','api_verEnvio','api_consolidado','api_notasUO','api_resumenNotas'];
 const espera = ms => new Promise(r => setTimeout(r, ms));
 async function llamarAPI(fn, args){
   const intentos = REINTENTABLES.includes(fn) ? 4 : 1;
