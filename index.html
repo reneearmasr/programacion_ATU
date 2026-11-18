@@ -1278,8 +1278,8 @@ function calcularAlertas(nivel){
     return Object.assign(N, { av, pct, al, et, sub, uo: Object.keys(N.uos).sort().join(', '), og: Object.keys(N.ogs).sort().join(', ') });
   }).filter(x => x.al);
   // Orden: Proyecto › Componente (finalidad) › Concepto 1 › Unidad
-  if (nivel === 'c2') filas.sort((x, y) => cmpTxt(x.c2, y.c2) || cmpTxt(x.comp, y.comp) || x.sf - y.sf || cmpTxt(x.pj, y.pj) || cmpTxt(x.uo, y.uo));
-  else filas.sort((x, y) => cmpTxt(x.pj, y.pj) || cmpTxt(x.comp, y.comp) || x.sf - y.sf || cmpTxt(x.uo, y.uo));
+  // Orden: Proyecto › Componente (finalidad) › Concepto 1 › Unidad
+  filas.sort((x, y) => cmpTxt(x.pj, y.pj) || cmpTxt(x.comp, y.comp) || x.sf - y.sf || (nivel === 'c2' ? cmpTxt(x.c2, y.c2) : 0) || cmpTxt(x.uo, y.uo));
   return { filas, M, dia, dm, ritmo, cA, cB, delMes };
 }
 function pintarAlertas(){
@@ -1313,8 +1313,8 @@ function pintarAlertas(){
       const cc = `<td class="l alr-t" title="${esc(x.c2)}"><b>${esc(x.c2 || 'Sin concepto')}</b></td>`;
       const co = `<td class="l alr-t" title="${esc(x.comp)}">${esc(x.comp.length > 70 ? x.comp.slice(0, 68) + '…' : x.comp)}<div class="meta">SEC_FUNC ${pad4(x.sf)}</div></td>`;
       const pj = `<td class="l alr-t" title="${esc(x.pj)}">${esc(x.pj.length > 60 ? x.pj.slice(0, 58) + '…' : x.pj)}</td>`;
-      return nivC === 3 ? cc + co + pj : nivC === 2 ? pj + co : pj; };
-    const colsTh = nivC === 3 ? '<th class="l">Concepto 1</th><th class="l">Componente<br><span class="thn">finalidad · SEC_FUNC</span></th><th class="l">Proyecto</th>'
+      return nivC === 3 ? pj + co + cc : nivC === 2 ? pj + co : pj; };
+    const colsTh = nivC === 3 ? '<th class="l">Proyecto</th><th class="l">Componente<br><span class="thn">finalidad · SEC_FUNC</span></th><th class="l">Concepto 1</th>'
       : nivC === 2 ? '<th class="l">Proyecto</th><th class="l">Componente<br><span class="thn">finalidad · SEC_FUNC</span></th>' : '<th class="l">Proyecto</th>';
     cuerpo = `<div class="kpis k7">
       <div class="kpi"><small>Programado ${mes}</small><b>${fmtM(T.prog)}</b><i>por las áreas (ajuste a la meta MEF)</i></div>
@@ -1365,11 +1365,11 @@ function descargarAlertas(){
   const A = S.alr, nv = NIVELES.find(n => n.k === A.nivel).n;
   const R = calcularAlertas(A.nivel); if (!R) return;
   const rx = v => Math.round((+v || 0) * 100) / 100;
-  const cab = ['Concepto 1', 'Componente (finalidad)', 'SEC_FUNC', 'Proyecto', 'Unidad orgánica', 'PIM', `Meta MEF ${MES[R.M]}`, `Ajuste programación ${MES[R.M]}`, `Devengado ${MES[R.M]} al ${R.cB ? corteTxt(A.b) : '—'}`, `Devengado ${MES[R.M]} al ${corteTxt(A.a)}`,
+  const cab = ['Proyecto', 'Componente (finalidad)', 'SEC_FUNC', 'Concepto 1', 'Unidad orgánica', 'PIM', `Meta MEF ${MES[R.M]}`, `Ajuste programación ${MES[R.M]}`, `Devengado ${MES[R.M]} al ${R.cB ? corteTxt(A.b) : '—'}`, `Devengado ${MES[R.M]} al ${corteTxt(A.a)}`,
     'Avance en la semana', '% del programado', 'Ritmo esperado %', 'Alerta'].concat(R.delMes.map(x => 'Devengado al ' + corteTxt(x.corte)));
-  const filas = R.filas.map(x => [A.nivel === 'c2' ? x.c2 : '', x.comp, A.nivel === 'pp' ? '' : pad4(x.sf), x.pj, x.uo, rx(x.pim), rx(x.mef), rx(x.prog), R.cB ? rx(x.devB) : '', rx(x.devA), R.cB ? rx(x.av) : '', x.pct == null ? '' : rx(x.pct * 100), Math.round(R.ritmo * 100), ALERTA[x.al].n].concat(x.evo.map(rx)));
+  const filas = R.filas.map(x => [x.pj, x.comp, A.nivel === 'pp' ? '' : pad4(x.sf), A.nivel === 'c2' ? x.c2 : '', x.uo, rx(x.pim), rx(x.mef), rx(x.prog), R.cB ? rx(x.devB) : '', rx(x.devA), R.cB ? rx(x.av) : '', x.pct == null ? '' : rx(x.pct * 100), Math.round(R.ritmo * 100), ALERTA[x.al].n].concat(x.evo.map(rx)));
   const blob = crearXlsx([{ nombre: 'Alertas por ' + nv, filas: [cab].concat(filas), cabecera: true, numDesde: 5, numHasta: cab.length, congelar: { c: 1, r: 1 }, filtro: true,
-    anchos: [35, 45, 10, 50, 14, 15, 15, 18, 18, 18, 15, 13, 12, 20].concat(R.delMes.map(() => 16)) }]);
+    anchos: [50, 45, 10, 35, 14, 15, 15, 18, 18, 18, 15, 13, 12, 20].concat(R.delMes.map(() => 16)) }]);
   bajarArchivo(blob, `Alertas_avance_${nv}_${corteTxt(A.a).slice(0, 10)}.xlsx`);
 }
 
