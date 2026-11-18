@@ -441,7 +441,7 @@ const GAS = typeof google !== 'undefined' && google.script && google.script.run;
 const API = !GAS && typeof window.API_URL === 'string' && /^https:\/\/script\.google\.com\//.test(window.API_URL) ? window.API_URL : '';
 const REAL = GAS || !!API;
 // Lecturas que se pueden repetir sin riesgo si Google falla un momento
-const REINTENTABLES = ['api_ping','api_ingreso','api_entrar','api_contexto','api_historial','api_fotoHistorial','api_cortes','api_login','api_cargarUO','api_resumenOPP','api_verEnvio','api_consolidado','api_notasUO','api_resumenNotas'];
+const REINTENTABLES = ['api_ccp','api_ping','api_ingreso','api_entrar','api_contexto','api_historial','api_fotoHistorial','api_cortes','api_login','api_cargarUO','api_resumenOPP','api_verEnvio','api_consolidado','api_notasUO','api_resumenNotas'];
 const espera = ms => new Promise(r => setTimeout(r, ms));
 async function llamarAPI(fn, args){
   const intentos = REINTENTABLES.includes(fn) ? 4 : 1;
@@ -1173,7 +1173,7 @@ function tabsOPP(){
   if (S.sesion.rol !== 'OPP') return '';
   const sel = k => S.ver === k || (k === 'form' && (S.ver === 'notas' || S.ver === 'nota'));
   const t = (k, n) => `<button class="tab" data-v="${k}" aria-selected="${sel(k)}">${n}</button>`;
-  return `<nav class="tabs" role="tablist">${t('bandeja','Bandeja de pedidos')}${t('avance','Avance por unidad')}${t('consolidado','Programación consolidada')}${t('alertas','Alertas de avance')}${t('form','Formulario por unidad')}${t('historial','Historial')}${t('notasopp','Notas de modificación')}</nav>`;
+  return `<nav class="tabs" role="tablist">${t('bandeja','Bandeja de pedidos')}${t('avance','Avance por unidad')}${t('consolidado','Programación consolidada')}${t('alertas','Alertas de avance')}${t('form','Formulario por unidad')}${t('ccp','Estado de las CCP')}${t('historial','Historial')}${t('notasopp','Notas de modificación')}</nav>`;
 }
 function bindTabs(){
   document.querySelectorAll('.tab').forEach(b => b.onclick = async () => {
@@ -1182,6 +1182,7 @@ function bindTabs(){
     if (v === 'consolidado'){ await abrirConsolidado(false); return; }
     if (v === 'historial'){ await abrirHistorial(); return; }
     if (v === 'alertas'){ await abrirAlertas(); return; }
+    if (v === 'ccp'){ await abrirCCP(); return; }
     if (v === 'notasopp'){ if (S.opp.notasOk) { S.ver = 'notasopp'; pintarOPP(); } else await abrirNotasOPP(); return; }
     S.ver = v;
     if (S.opp.unidades) pintarOPP(); else await abrirOPP();
@@ -1195,6 +1196,85 @@ async function abrirOPP(){
 }
 const ESTADOS = ['ENVIADO','OBSERVADO','APROBADO','BORRADOR'];
 const etqEstado = e => e === 'SIN INICIAR' ? 'SIN ENVIAR' : e;   // «Sin iniciar» se muestra como «Sin enviar»
+/* ===================== ESTADO DE LAS CCP (OPP) =====================
+   Certificaciones de crédito presupuestario de las inversiones, con su avance (comprometido, devengado, girado),
+   meses sin movimiento y alerta. Las arma el servidor con los reportes Certificaciones_Compromiso y PCA del SIAF. */
+S.ccp = { data: null, og: '', uo: '', pp: '', al: '', q: '', ord: { k: 'pd', d: -1 } };
+const ccpCls = a => /^Ejecutada/.test(a) ? 'ok' : a === 'Sin alerta' || /^Certificado en cero/.test(a) ? 'neutro' : /6-9|9-12|más de 12/.test(a) || /\+/.test(a) ? 'bad' : 'warn';
+async function abrirCCP(forzar){
+  busy(true);
+  try { if (!S.ccp.data || forzar){ S.ccp.data = await run('api_ccp'); S.ccp.data.filas.forEach(r => r.ccpN = +r.ccp || 0); } } finally { busy(false); }
+  S.ver = 'ccp'; pintarOPP();
+}
+function ccpFiltradas(exc){
+  const C = S.ccp, q = C.q.trim().toLowerCase();
+  return (C.data ? C.data.filas : []).filter(r => (exc === 'og' || !C.og || r.og === C.og) && (exc === 'uo' || !C.uo || r.uo === C.uo) && (exc === 'pp' || !C.pp || codNom(r.pp) === C.pp)
+    && (exc === 'al' || !C.al || r.al === C.al) && (!q || (r.ccp + ' ' + r.gl).toLowerCase().indexOf(q) >= 0));
+}
+function pintarCCP(){
+  const C = S.ccp, D = C.data || { filas: [], corte: '' };
+  const F = ccpFiltradas().slice(), o = C.ord;
+  if (o) F.sort((a, b) => o.d * ((a[o.k] == null ? -1e18 : a[o.k]) - (b[o.k] == null ? -1e18 : b[o.k])));
+  const opc = (k, f) => [...new Set(ccpFiltradas(k).map(f).filter(Boolean))].sort((a, b) => cmpTxt(a, b));
+  const T = F.reduce((t, r) => { ['ce', 'co', 'dv', 'gi', 'pc', 'pd'].forEach(k => t[k] += r[k]); return t; }, { ce: 0, co: 0, dv: 0, gi: 0, pc: 0, pd: 0 });
+  const conAl = F.filter(r => ccpCls(r.al) === 'bad' || ccpCls(r.al) === 'warn').length;
+  const pc = (a, b) => b > .5 ? (a / b * 100).toFixed(1) + '%' : '—';
+  const th = (k, t) => `<th class="alr-th" data-cord="${k}" title="Ordenar de mayor a menor / de menor a mayor">${t} <span class="so">${o && o.k === k ? (o.d < 0 ? '▼' : '▲') : '⇅'}</span></th>`;
+  const sel = (id, n, v, L, f) => `<label class="f">${n}<select class="inp" id="${id}"><option value="">Todos</option>${L.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(f ? f(x) : x)}</option>`).join('')}</select></label>`;
+  $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
+    <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio || S.config.anio)} · certificaciones de crédito presupuestario de inversiones${D.corte ? ' · reporte SIAF al ' + esc(D.corte) : ''}</div><h2>Estado de las CCP</h2></div>
+      <span class="grow"></span><button class="btn sm" id="cpRef">↻ Actualizar</button><button class="btn primary" id="cpXls" ${F.length ? '' : 'disabled'}>⭳ Descargar Excel</button></div>
+    ${!D.filas.length ? `<section class="panel"><div class="empty">Aún no hay CCP cargadas. Deja en la carpeta de Drive los reportes <b>Certificaciones_Compromiso_${esc(S.config.anio)}_…csv</b> y <b>PCA_Certificaciones_Compromiso_${esc(S.config.anio)}_…csv</b> del SIAF y, en el Google Sheet, usa <b>POI ATU → Actualizar el estado de las CCP desde la carpeta de Drive</b> (también se actualiza solo con la carga diaria).</div></section>` : `
+    <section class="panel cons-f">
+      ${sel('cpOg', 'Órgano', C.og, opc('og', r => r.og))}${sel('cpUo', 'Unidad orgánica', C.uo, opc('uo', r => r.uo))}
+      ${sel('cpPp', 'Inversión vinculada', C.pp, opc('pp', r => codNom(r.pp)))}${sel('cpAl', 'Alerta', C.al, opc('al', r => r.al))}
+      <label class="f" style="grid-column:span 2">Buscar<input class="inp" id="cpQ" placeholder="N.° de CCP o texto de la glosa" value="${esc(C.q)}"></label>
+    </section>
+    <div class="kpis">
+      <div class="kpi"><small>CCP</small><b>${F.length}</b><i>${conAl} con alerta</i></div>
+      <div class="kpi"><small>Certificado</small><b>${fmtM(T.ce)}</b><i>monto certificado</i></div>
+      <div class="kpi"><small>Comprometido</small><b>${fmtM(T.co)}</b><i>${pc(T.co, T.ce)} del certificado</i></div>
+      <div class="kpi"><small>Devengado</small><b>${fmtM(T.dv)}</b><i>${pc(T.dv, T.ce)} del certificado</i></div>
+      <div class="kpi ${T.pc > .5 ? 'warn' : ''}"><small>Por comprometer</small><b>${fmtM(T.pc)}</b><i>certificado − comprometido</i></div>
+      <div class="kpi ${T.pd > .5 ? 'bad' : ''}"><small>Por devengar</small><b>${fmtM(T.pd)}</b><i>certificado − devengado</i></div>
+    </div>
+    <section class="panel"><div class="tbl-wrap" style="max-height:70vh;overflow:auto"><table class="g alr"><thead><tr>
+      ${th('ccpN', 'CCP')}<th class="l">Órgano</th><th class="l">Unidad orgánica</th><th class="l">Inversión vinculada</th><th class="l">Glosa</th>
+      ${th('ce', 'Certificado<br><span class="thn">S/</span>')}${th('co', 'Comprometido<br><span class="thn">S/</span>')}${th('dv', 'Devengado<br><span class="thn">S/</span>')}${th('gi', 'Girado<br><span class="thn">S/</span>')}
+      ${th('pc', 'Por comprometer<br><span class="thn">S/</span>')}${th('pd', 'Por devengar<br><span class="thn">S/</span>')}${th('ms', 'Meses sin<br>avance (PCA)')}<th class="l">Alerta</th></tr></thead>
+      <tbody>${F.map(r => `<tr><td class="num"><b>${esc(r.ccp)}</b></td><td class="l">${esc(r.og)}</td><td class="l">${esc(r.uo)}</td>
+        <td class="l alr-t" title="${esc(r.pp)}">${esc(r.pp.length > 60 ? r.pp.slice(0, 58) + '…' : r.pp)}<div class="meta">SEC_FUNC ${pad4(r.sf)}</div></td>
+        <td class="l alr-t" style="min-width:300px;max-width:380px" title="${esc(r.gl)}">${esc(r.gl.length > 140 ? r.gl.slice(0, 138) + '…' : r.gl)}</td>
+        <td class="num">${fmt2(r.ce)}</td><td class="num">${fmt2(r.co)}</td><td class="num">${fmt2(r.dv)}</td><td class="num">${fmt2(r.gi)}</td>
+        <td class="num ${r.pc > .5 ? 'pos' : ''}">${fmt2(r.pc)}</td><td class="num ${r.pd > .5 ? 'diff-dn' : ''}">${fmt2(r.pd)}</td>
+        <td class="num" title="${r.um ? 'Último movimiento: ' + esc(r.um) : ''}">${r.ms == null ? '—' : r.ms}</td><td class="l"><span class="pill al-${ccpCls(r.al)}">${esc(r.al)}</span></td></tr>`).join('')
+        || '<tr><td class="l" colspan="13"><div class="empty">No hay CCP con esos filtros.</div></td></tr>'}</tbody>
+      <tfoot><tr><td class="l" colspan="5"><b>Total (${F.length} CCP)</b></td><td class="num">${fmt2(T.ce)}</td><td class="num">${fmt2(T.co)}</td><td class="num">${fmt2(T.dv)}</td><td class="num">${fmt2(T.gi)}</td>
+        <td class="num">${fmt2(T.pc)}</td><td class="num">${fmt2(T.pd)}</td><td></td><td></td></tr></tfoot></table></div>
+      <p class="meta" style="margin:10px 14px 12px"><b>Meses sin avance (PCA)</b>: meses cumplidos desde el último documento registrado en la CCP hasta la fecha del reporte. <b>Alertas</b>: «Ejecutada al 100%» (por devengar ≤ S/ 0.05), «Sin comprometer», «Sin devengar» y «Sin avance» de 3-6, 6-9 o 9-12 meses; «Certificado en cero» = CCP anulada o rebajada. Solo CCP con SEC_FUNC de inversiones; la inversión vinculada es el proyecto de esa SEC_FUNC. Haz clic en el título de una columna de montos para ordenarla.</p></section>`}`;
+  bindTabs();
+  const on = (id, k) => { const e = $('#' + id); if (e) e.onchange = () => { C[k] = e.value; pintarCCP(); }; };
+  on('cpOg', 'og'); on('cpUo', 'uo'); on('cpPp', 'pp'); on('cpAl', 'al');
+  const q = $('#cpQ'); if (q) q.onchange = () => { C.q = q.value; pintarCCP(); };
+  document.querySelectorAll('[data-cord]').forEach(h => h.onclick = () => { const k = h.dataset.cord, x = C.ord;
+    C.ord = !x || x.k !== k ? { k, d: -1 } : x.d < 0 ? { k, d: 1 } : null; pintarCCP(); });
+  $('#cpRef').onclick = () => abrirCCP(true);
+  $('#cpXls').onclick = descargarCCP;
+}
+/** Excel con el formato de «CCP acumuladas con alertas» */
+function descargarCCP(){
+  const D = S.ccp.data, F = ccpFiltradas(), o = S.ccp.ord, rx = v => Math.round((+v || 0) * 100) / 100;
+  if (o) F.sort((a, b) => o.d * ((a[o.k] == null ? -1e18 : a[o.k]) - (b[o.k] == null ? -1e18 : b[o.k])));
+  const cab = ['CCP', 'Órgano', 'Unidad orgánica', 'Inversión vinculada', 'SEC_FUNC', 'Glosa', 'Certificado (S/)', 'Comprometido (S/)', 'Devengado (S/)', 'Girado (S/)', 'Por comprometer (S/)', 'Por devengar (S/)', 'Meses sin avance (PCA)', 'Último movimiento', 'Alerta'];
+  const filas = F.map(r => [+r.ccp || r.ccp, r.og, r.uo, r.pp, pad4(r.sf), r.gl, rx(r.ce), rx(r.co), rx(r.dv), rx(r.gi), rx(r.pc), rx(r.pd), r.ms == null ? '' : r.ms, r.um, r.al]);
+  const sum = c => rx(F.reduce((a, r) => a + r[c], 0));
+  filas.push(['TOTAL', '', '', '', '', F.length + ' CCP', sum('ce'), sum('co'), sum('dv'), sum('gi'), sum('pc'), sum('pd'), '', '', '']);
+  const blob = crearXlsx([{ nombre: 'CCP', filas: [cab].concat(filas), cabecera: true, numDesde: 6, numHasta: 11, congelar: { c: 1, r: 1 }, filtro: true,
+    anchos: [10, 12, 19, 50, 10, 60, 18, 18, 18, 17, 18, 18, 16, 14, 36] }]);
+  const c = String(D.corte || '').slice(0, 10).replace(/\./g, '-');
+  bajarArchivo(blob, `CCP_inversiones_con_alertas_${c || hoyISO()}.xlsx`);
+}
+
 /* ===================== ALERTAS DE AVANCE ENTRE CIERRES (OPP) =====================
    Cada carga del SIAF guarda una foto del devengado (hoja Cortes). Aquí se compara el cierre elegido con otro anterior,
    por Proyecto, SEC_FUNC o Concepto, contra lo programado por las áreas para el mes del cierre:
@@ -1467,6 +1547,7 @@ function pintarOPP(){
   if (S.ver === 'notasopp') return pintarNotasOPP();
   if (S.ver === 'historial') return pintarHistorial();
   if (S.ver === 'alertas') return pintarAlertas();
+  if (S.ver === 'ccp') return pintarCCP();
   if (S.ver === 'consolidado') return pintarConsolidado();
   const U = S.opp.unidades || [], E = S.opp.envios || [];
   const cnt = {}; U.forEach(u => cnt[u.estado] = (cnt[u.estado] || 0) + 1);
@@ -2529,6 +2610,16 @@ function iniciarDemo(){
             p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '', fv: L.f || Z3(), pf: p ? (p.f || Z3()) : null }); });
       });
       return { ini, anio:cfg.anio, proceso:cfg.proceso, corte:cfg.fechaCorte, fut: cfg.fut || null, filas };
+    },
+    api_ccp(t){
+      // Demo: CCP de ejemplo armadas con las inversiones de la base (montos y alertas ilustrativos)
+      ses(t); const inv = base.filter(b => b.ti === 'Inversiones' && b.pim > 0).slice(0, 60), filas = [];
+      inv.forEach((b, i) => { const ce = Math.round(b.pim * (0.3 + (i % 5) * 0.15)), f = [1, 1, .8, 0, .5, 1, .3, 0][i % 8], co = Math.round(ce * (f === 0 && i % 3 ? 1 : Math.max(f, i % 7 ? f : 0))), dv = Math.round(co * [1, .6, 0, 1, .4][i % 5]);
+        const ms = [0, 1, 4, 7, 2, 10, 5, 3][i % 8], pc = ce - co, pd = ce - dv, a = [];
+        let al; if (!ce) al = 'Certificado en cero (anulada o rebajada)'; else if (Math.abs(pd) <= .05) al = 'Ejecutada al 100%';
+        else { if (co <= 0) a.push('Sin comprometer'); else if (dv <= 0) a.push('Sin devengar'); if (ms > 9) a.push('Sin avance 9-12 meses'); else if (ms > 6) a.push('Sin avance 6-9 meses'); else if (ms > 3) a.push('Sin avance 3-6 meses'); al = a.join(' + ') || 'Sin alerta'; }
+        filas.push({ ccp: String(1000 + i * 7), og: b.og, uo: b.uo, pp: b.pp || '', sf: b.sf, gl: 'Ejemplo: ' + String(b.cl).split('-').slice(1).join('-') + ' – ' + (b.c2 || ''), ce, co, dv, gi: dv, pc, pd, ms, um: '', al, corte: '28.09.2026 09:30' }); });
+      return { anio: cfg.anio, corte: '28.09.2026 09:30', filas };
     },
     api_cortes(t){
       // Demo: cuatro cierres semanales del mes del último corte; algunas líneas se quedan sin avance para mostrar las alertas
