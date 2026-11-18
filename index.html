@@ -187,10 +187,13 @@ td.fcol{background:color-mix(in srgb,#7C3AED 4%,var(--surface))} .fut0{border-le
 .kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)}
 .cons-f.av-f{grid-template-columns:repeat(5,minmax(0,1fr));border-bottom:1px solid var(--line)} @media (max-width:1000px){.cons-f.av-f{grid-template-columns:1fr 1fr}}
 table.g td.av-me,table.g th.av-me{background:color-mix(in srgb,var(--warn) 6%,var(--surface))} table.g td.av-aj,table.g th.av-aj{background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.pill.al-neutro{background:var(--surface2);color:var(--muted)} .alr-th{cursor:pointer;user-select:none} .alr-th:hover{color:var(--accent)} .alr-th .so{font-size:10px;color:var(--accent)}
 .pill.al-bad{background:color-mix(in srgb,var(--bad) 14%,var(--surface));color:var(--bad)} .pill.al-warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));color:var(--warn)} .pill.al-ok{background:color-mix(in srgb,var(--ok) 14%,var(--surface));color:var(--ok)}
 .barra{position:relative;height:8px;background:var(--surface2);border-radius:4px;margin:4px 0 3px;min-width:90px} .barra span{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
 .barra span.ok{background:var(--ok)} .barra span.warn{background:var(--warn)} .barra span.bad{background:var(--bad)} .barra i{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
 td.mono{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+.spark rect.sp-b{fill:color-mix(in srgb,var(--accent) 45%,var(--surface2))} .spark rect.sp-ok{fill:var(--ok)} .spark rect.sp-warn{fill:var(--warn)} .spark rect.sp-bad{fill:var(--bad)} .spark rect.sp-neutro{fill:var(--muted)}
+.spark line.sp-p{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 2} .spark text{font-size:8.5px;fill:var(--muted);font-family:var(--mono)}
 table.g td.alr-t{white-space:normal;min-width:150px;max-width:260px;font-size:12px;line-height:1.3}
 .pill.st-BORRADOR{background:var(--surface2)} .banner.info{background:color-mix(in srgb,var(--accent) 8%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));padding:10px 14px;border-radius:8px}
 .btn-link{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit;font-size:13px}
@@ -1197,10 +1200,10 @@ const etqEstado = e => e === 'SIN INICIAR' ? 'SIN ENVIAR' : e;   // «Sin inicia
    por Proyecto, SEC_FUNC o Concepto, contra lo programado por las áreas para el mes del cierre:
    SIN AVANCE (el devengado del mes no se movió), LENTO (va por debajo del ritmo esperado del mes), RETROCESO (bajó),
    DEVENGADO SIN PROGRAMAR, EN RITMO y CUMPLIDO. */
-S.alr = { data: null, nivel: 'c2', a: '', b: '', uo: '', pp: '', todos: false };
+S.alr = { data: null, nivel: 'c2', a: '', b: '', uo: '', pp: '', c2: '', todos: true, ord: null };
 const NIVELES = [{ k: 'pp', n: 'Proyecto' }, { k: 'sf', n: 'SEC_FUNC' }, { k: 'c2', n: 'Concepto' }];
 const ALERTA = { RETROCESO: { n: 'Retroceso', c: 'bad', o: 0 }, 'SIN AVANCE': { n: 'Sin avance', c: 'bad', o: 1 }, LENTO: { n: 'Avance lento', c: 'warn', o: 2 },
-  'SIN PROGRAMAR': { n: 'Devengado sin programar', c: 'warn', o: 3 }, 'EN RITMO': { n: 'En ritmo', c: 'ok', o: 4 }, CUMPLIDO: { n: 'Cumplido', c: 'ok', o: 5 } };
+  'SIN PROGRAMAR': { n: 'Devengado sin programar', c: 'warn', o: 3 }, 'EN RITMO': { n: 'En ritmo', c: 'ok', o: 4 }, CUMPLIDO: { n: 'Cumplido', c: 'ok', o: 5 }, 'SIN PROG': { n: 'Sin programación', c: 'neutro', o: 6 } };
 const MES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','setiembre','octubre','noviembre','diciembre'];
 const corteTxt = c => { const m = String(c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/); return m ? `${m[3]}.${m[2]}.${m[1]}${m[4] && m[4] + m[5] !== '0000' ? ' ' + m[4] + ':' + m[5] : ''}` : String(c || ''); };
 async function abrirAlertas(forzar){
@@ -1248,6 +1251,7 @@ function calcularAlertas(nivel){
     if (A.uo && L.uo !== A.uo) return;
     const pj = codNom(L.pp);
     if (A.pp && pj !== A.pp) return;
+    if (A.c2 && String(L.c2 || '') !== A.c2) return;
     const k = nivel === 'pp' ? pj : nivel === 'sf' ? pj + '|' + L.sf : pj + '|' + L.sf + '|' + L.c2;
     const N = nodos[k] = nodos[k] || { k, pj, sf: L.sf, fi: L.fi, c2: L.c2, uos: {}, ogs: {}, pim: 0, prog: 0, mef: 0, devA: 0, devB: 0, acA: 0, acB: 0, cerA: 0, evo: delMes.map(() => 0), n: 0, est: {} };
     const a = cA.d[id], b = cB ? cB.d[id] : null;
@@ -1262,7 +1266,7 @@ function calcularAlertas(nivel){
   const filas = Object.values(nodos).map(N => {
     const av = N.devA - N.devB, pct = N.prog > .5 ? N.devA / N.prog : null;
     let al;
-    if (N.prog <= .5) al = N.devA > .5 ? 'SIN PROGRAMAR' : null;
+    if (N.prog <= .5) al = N.devA > .5 ? 'SIN PROGRAMAR' : 'SIN PROG';   // sin programación ni devengado en el mes: se muestra igual (suma al PIM total)
     else if (cB && av < -.5) al = 'RETROCESO';
     else if (pct >= .995) al = 'CUMPLIDO';
     else if (cB && av <= .5) al = 'SIN AVANCE';
@@ -1274,7 +1278,8 @@ function calcularAlertas(nivel){
     return Object.assign(N, { av, pct, al, et, sub, uo: Object.keys(N.uos).sort().join(', '), og: Object.keys(N.ogs).sort().join(', ') });
   }).filter(x => x.al);
   // Orden: Proyecto › Componente (finalidad) › Concepto 1 › Unidad
-  filas.sort((x, y) => cmpTxt(x.pj, y.pj) || cmpTxt(x.comp, y.comp) || x.sf - y.sf || (nivel === 'c2' ? cmpTxt(x.c2, y.c2) : 0) || cmpTxt(x.uo, y.uo));
+  if (nivel === 'c2') filas.sort((x, y) => cmpTxt(x.c2, y.c2) || cmpTxt(x.comp, y.comp) || x.sf - y.sf || cmpTxt(x.pj, y.pj) || cmpTxt(x.uo, y.uo));
+  else filas.sort((x, y) => cmpTxt(x.pj, y.pj) || cmpTxt(x.comp, y.comp) || x.sf - y.sf || cmpTxt(x.uo, y.uo));
   return { filas, M, dia, dm, ritmo, cA, cB, delMes };
 }
 function pintarAlertas(){
@@ -1282,17 +1287,35 @@ function pintarAlertas(){
   const opcC = sel => C.slice().reverse().map(x => `<option value="${esc(x.corte)}" ${x.corte === sel ? 'selected' : ''}>${esc(corteTxt(x.corte))}</option>`).join('');
   const uos = [...new Set(Object.values(D.lineas).map(l => l.uo))].sort();
   const pjs = [...new Set(Object.values(D.lineas).map(l => codNom(l.pp)))].sort();
+  const c2s = [...new Set(Object.values(D.lineas).filter(l => !A.uo || l.uo === A.uo).map(l => String(l.c2 || '')).filter(Boolean))].sort((a, b) => cmpTxt(a, b));
   const R = C.length ? calcularAlertas(A.nivel) : null;
   let cuerpo = '';
   if (!C.length) cuerpo = `<section class="panel"><div class="empty">Aún no hay cierres guardados. Cada carga del SIAF guarda uno desde ahora; para tener los anteriores, en el Google Sheet usa <b>POI ATU → Reconstruir el historial de cierres desde la carpeta de Drive</b>.</div></section>`;
   else if (R){
-    const F = R.filas, vis = A.todos ? F : F.filter(x => ['RETROCESO', 'SIN AVANCE', 'LENTO', 'SIN PROGRAMAR'].includes(x.al));
+    const F = R.filas, vis = (A.todos ? F : F.filter(x => ['RETROCESO', 'SIN AVANCE', 'LENTO', 'SIN PROGRAMAR'].includes(x.al))).slice();
+    if (A.ord){ const k = A.ord.k, d = A.ord.d; vis.sort((x, y) => d * (((x[k] == null ? -1e18 : x[k])) - ((y[k] == null ? -1e18 : y[k])))); }
     const T = F.reduce((t, x) => { t.prog += x.prog; t.devA += x.devA; t.devB += x.devB; return t; }, { prog: 0, devA: 0, devB: 0 });
+    const TV = vis.reduce((t, x) => { ['pim', 'mef', 'prog', 'devB', 'devA', 'av'].forEach(k => t[k] += +x[k] || 0); return t; }, { pim: 0, mef: 0, prog: 0, devB: 0, devA: 0, av: 0 });
     const cnt = {}; F.forEach(x => cnt[x.al] = (cnt[x.al] || 0) + 1);
     const pT = T.prog > .5 ? T.devA / T.prog * 100 : null, mes = MES_L[R.M];
     const nv = NIVELES.find(n => n.k === A.nivel).n;
-    const nivC = A.nivel === 'pp' ? 1 : A.nivel === 'sf' ? 2 : 3, nCol = nivC + 9;
-    const semH = R.delMes.map(x => esc(corteTxt(x.corte).slice(0, 5))).join(' → ');
+    const nivC = A.nivel === 'pp' ? 1 : A.nivel === 'sf' ? 2 : 3, nCol = nivC + 10;
+    const semH = R.delMes.map(x => esc(corteTxt(x.corte).slice(0, 5))).join(' · ');
+    // Encabezado ordenable: clic = de mayor a menor; otro clic = de menor a mayor; otro = orden original
+    const th = (k, t) => `<th class="alr-th" data-ord="${k}" title="Ordenar de mayor a menor / de menor a mayor">${t} <span class="so">${A.ord && A.ord.k === k ? (A.ord.d < 0 ? '▼' : '▲') : '⇅'}</span></th>`;
+    // Mini gráfico de la evolución semanal: barras por semana y línea punteada = programado del mes
+    const spark = x => { const v = x.evo, mx = Math.max(x.prog, ...v, 1), W = 30, H = 34, n = v.length;
+      const bars = v.map((y, j) => { const h = Math.max(y > 0 ? 2 : 0, Math.round(y / mx * (H - 4))); return `<rect x="${j * W + 3}" y="${H - h}" width="${W - 6}" height="${h}" rx="2" class="${j === n - 1 ? 'sp-' + ALERTA[x.al].c : 'sp-b'}"><title>${esc(corteTxt(R.delMes[j].corte).slice(0, 5))}: S/ ${fmt(y)}</title></rect>`; }).join('');
+      const yp = x.prog > .5 ? H - Math.round(x.prog / mx * (H - 4)) : null;
+      return `<svg class="spark" width="${n * W}" height="${H + 12}" viewBox="0 0 ${n * W} ${H + 12}" role="img" aria-label="Evolución semanal">${bars}${yp != null ? `<line x1="0" x2="${n * W}" y1="${yp}" y2="${yp}" class="sp-p"><title>Programado: S/ ${fmt(x.prog)}</title></line>` : ''}
+        ${v.map((y, j) => `<text x="${j * W + W / 2}" y="${H + 10}" text-anchor="middle">${esc(corteTxt(R.delMes[j].corte).slice(0, 2))}</text>`).join('')}</svg>`; };
+    const colsTxt = x => {
+      const cc = `<td class="l alr-t" title="${esc(x.c2)}"><b>${esc(x.c2 || 'Sin concepto')}</b></td>`;
+      const co = `<td class="l alr-t" title="${esc(x.comp)}">${esc(x.comp.length > 70 ? x.comp.slice(0, 68) + '…' : x.comp)}<div class="meta">SEC_FUNC ${pad4(x.sf)}</div></td>`;
+      const pj = `<td class="l alr-t" title="${esc(x.pj)}">${esc(x.pj.length > 60 ? x.pj.slice(0, 58) + '…' : x.pj)}</td>`;
+      return nivC === 3 ? cc + co + pj : nivC === 2 ? pj + co : pj; };
+    const colsTh = nivC === 3 ? '<th class="l">Concepto 1</th><th class="l">Componente<br><span class="thn">finalidad · SEC_FUNC</span></th><th class="l">Proyecto</th>'
+      : nivC === 2 ? '<th class="l">Proyecto</th><th class="l">Componente<br><span class="thn">finalidad · SEC_FUNC</span></th>' : '<th class="l">Proyecto</th>';
     cuerpo = `<div class="kpis k7">
       <div class="kpi"><small>Programado ${mes}</small><b>${fmtM(T.prog)}</b><i>por las áreas (ajuste a la meta MEF)</i></div>
       <div class="kpi"><small>Devengado ${mes} al ${esc(corteTxt(A.a))}</small><b>${fmtM(T.devA)}</b><i>${pT == null ? '—' : pT.toFixed(1) + '% del programado'} · ritmo esperado ${Math.round(R.ritmo * 100)}%</i></div>
@@ -1300,17 +1323,19 @@ function pintarAlertas(){
       ${['RETROCESO', 'SIN AVANCE', 'LENTO', 'SIN PROGRAMAR'].map(k => `<div class="kpi ${cnt[k] ? ALERTA[k].c : ''}"><small>${ALERTA[k].n}</small><b>${cnt[k] || 0}</b><i>${nv.toLowerCase()}${(cnt[k] || 0) === 1 ? '' : 's'}</i></div>`).join('')}
     </div>
     <section class="panel"><div class="tbl-wrap" style="max-height:70vh;overflow:auto"><table class="g alr"><thead><tr>
-      <th class="l">Proyecto</th>${nivC > 1 ? '<th class="l">Componente<br><span class="thn">finalidad · SEC_FUNC</span></th>' : ''}${nivC > 2 ? '<th class="l">Concepto 1</th>' : ''}<th class="l">Unidad</th>
-      <th>Meta MEF<br><span class="thn">${esc(MES[R.M])}</span></th><th>Ajuste programación<br><span class="thn">${esc(MES[R.M])} · áreas</span></th>
-      <th>Devengado ${esc(MES[R.M])}<br><span class="thn">al ${esc(R.cB ? corteTxt(A.b) : '—')}</span></th><th>Devengado ${esc(MES[R.M])}<br><span class="thn">al ${esc(corteTxt(A.a))}</span></th><th>Avance<br><span class="thn">en la semana</span></th>
-      <th>% del programado<br><span class="thn">ritmo esperado ${Math.round(R.ritmo * 100)}%</span></th><th class="l">Evolución semanal en ${esc(MES[R.M])}<br><span class="thn">${semH}</span></th><th class="l">Alerta</th></tr></thead>
-      <tbody>${vis.map(x => `<tr><td class="l alr-t" title="${esc(x.pj)}">${esc(x.pj.length > 60 ? x.pj.slice(0, 58) + '…' : x.pj)}</td>${nivC > 1 ? `<td class="l alr-t" title="${esc(x.comp)}">${esc(x.comp)}<div class="meta">SEC_FUNC ${pad4(x.sf)}</div></td>` : ''}${nivC > 2 ? `<td class="l alr-t" title="${esc(x.c2)}"><b>${esc(x.c2 || 'Sin concepto')}</b></td>` : ''}<td class="l">${esc(x.uo)}</td>
+      ${colsTh}<th class="l">Unidad</th>${th('pim', 'PIM')}
+      ${th('mef', `Meta MEF<br><span class="thn">${esc(MES[R.M])}</span>`)}${th('prog', `Ajuste programación<br><span class="thn">${esc(MES[R.M])} · áreas</span>`)}
+      ${th('devB', `Devengado ${esc(MES[R.M])}<br><span class="thn">al ${esc(R.cB ? corteTxt(A.b) : '—')}</span>`)}${th('devA', `Devengado ${esc(MES[R.M])}<br><span class="thn">al ${esc(corteTxt(A.a))}</span>`)}${th('av', 'Avance<br><span class="thn">en la semana</span>')}
+      ${th('pct', `% del programado<br><span class="thn">ritmo esperado ${Math.round(R.ritmo * 100)}%</span>`)}<th class="l">Evolución semanal en ${esc(MES[R.M])}<br><span class="thn">${semH}</span></th><th class="l">Alerta</th></tr></thead>
+      <tbody>${vis.map(x => `<tr>${colsTxt(x)}<td class="l">${esc(x.uo)}</td><td class="num">${fmt(x.pim)}</td>
         <td class="num">${fmt(x.mef)}</td><td class="num">${fmt(x.prog)}</td><td class="num">${R.cB ? fmt(x.devB) : '—'}</td><td class="num"><b>${fmt(x.devA)}</b></td>
         <td class="num ${x.av < -.5 ? 'diff-dn' : x.av > .5 ? 'diff-up' : ''}">${R.cB ? (x.av > .5 ? '+' : '') + fmt(x.av) : '—'}</td>
         <td class="num">${x.pct == null ? '—' : `<div class="barra"><span style="width:${Math.min(100, x.pct * 100)}%" class="${ALERTA[x.al].c}"></span><i style="left:${Math.round(R.ritmo * 100)}%"></i></div>${(x.pct * 100).toFixed(1)}%`}</td>
-        <td class="l mono">${x.evo.map(v => fmtM(v)).join(' → ')}</td><td class="l"><span class="pill al-${ALERTA[x.al].c}">${ALERTA[x.al].n}</span></td></tr>`).join('')
-        || `<tr><td class="l" colspan="${nCol}"><div class="empty">Sin alertas con estos filtros${A.todos ? '' : ': todo va en ritmo o cumplido'}.</div></td></tr>`}</tbody></table></div>
-      <p class="meta" style="margin:10px 2px 0">Mes del cierre: <b>${esc(mes)}</b> (día ${R.dia} de ${R.dm}: ritmo esperado ${Math.round(R.ritmo * 100)}% de lo programado). <b>Sin avance</b>: el devengado del mes no cambió entre los dos cierres comparados (por defecto, con una semana de diferencia). La evolución muestra el último cierre de cada semana. <b>Avance lento</b>: más de 25 puntos por debajo del ritmo esperado. El programado es la versión «${esc((VERSIONES.find(v => v.k === S.cons.ver) || {}).n || '')}» del consolidado.</p></section>`;
+        <td class="l">${spark(x)}</td><td class="l"><span class="pill al-${ALERTA[x.al].c}">${ALERTA[x.al].n}</span></td></tr>`).join('')
+        || `<tr><td class="l" colspan="${nCol}"><div class="empty">Sin alertas con estos filtros${A.todos ? '' : ': todo va en ritmo o cumplido'}.</div></td></tr>`}</tbody>
+      <tfoot><tr><td class="l" colspan="${nivC + 1}"><b>Total (${vis.length} ${nv.toLowerCase()}${vis.length === 1 ? '' : 's'})</b></td><td class="num">${fmt(TV.pim)}</td><td class="num">${fmt(TV.mef)}</td><td class="num">${fmt(TV.prog)}</td>
+        <td class="num">${R.cB ? fmt(TV.devB) : '—'}</td><td class="num">${fmt(TV.devA)}</td><td class="num">${R.cB ? (TV.av > .5 ? '+' : '') + fmt(TV.av) : '—'}</td><td class="num">${TV.prog > .5 ? (TV.devA / TV.prog * 100).toFixed(1) + '%' : '—'}</td><td></td><td></td></tr></tfoot></table></div>
+      <p class="meta" style="margin:10px 2px 0">Mes del cierre: <b>${esc(mes)}</b> (día ${R.dia} de ${R.dm}: ritmo esperado ${Math.round(R.ritmo * 100)}% de lo programado). <b>Sin avance</b>: el devengado del mes no cambió entre los dos cierres comparados (por defecto, con una semana de diferencia). La evolución muestra el devengado del mes al último cierre de cada semana (barras; la línea punteada es lo programado; pasa el cursor para ver el monto). Haz clic en el título de una columna de montos para ordenarla de mayor a menor o de menor a mayor. <b>Avance lento</b>: más de 25 puntos por debajo del ritmo esperado. El programado es la versión «${esc((VERSIONES.find(v => v.k === S.cons.ver) || {}).n || '')}» del consolidado.</p></section>`;
   }
   $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio || S.config.anio)} · comparación entre cierres del SIAF</div><h2>Alertas de avance</h2></div>
@@ -1318,17 +1343,20 @@ function pintarAlertas(){
       <button class="btn" id="aPpt" ${R && R.filas.length ? '' : 'disabled'}>📊 Generar PPT de alertas</button>
       <button class="btn primary" id="aXls" ${R && R.filas.length ? '' : 'disabled'}>⭳ Descargar Excel</button></div>
     <section class="panel cons-f">
-      <label class="f">Nivel<select class="inp" id="aNiv">${NIVELES.map(n => `<option value="${n.k}" ${n.k === A.nivel ? 'selected' : ''}>${n.n}</option>`).join('')}</select></label>
+      <label class="f">Concepto 1<select class="inp" id="aC2"><option value="">Todos</option>${c2s.map(u => `<option ${u === A.c2 ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
+      <label class="f">Unidad orgánica<select class="inp" id="aUo"><option value="">Todas</option>${uos.map(u => `<option ${u === A.uo ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
       <label class="f">Cierre actual<select class="inp" id="aA">${opcC(A.a)}</select></label>
       <label class="f">Comparar con el cierre<select class="inp" id="aB"><option value="">— Ninguno —</option>${opcC(A.b)}</select></label>
-      <label class="f">Unidad orgánica<select class="inp" id="aUo"><option value="">Todas</option>${uos.map(u => `<option ${u === A.uo ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
       <label class="f">Proyecto<select class="inp" id="aPp"><option value="">Todos</option>${pjs.map(u => `<option ${u === A.pp ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
-      <label class="chk" style="align-self:end"><input type="checkbox" id="aTodos" ${A.todos ? 'checked' : ''}> Mostrar también los que van en ritmo o cumplidos</label>
+      <label class="f">Nivel<select class="inp" id="aNiv">${NIVELES.map(n => `<option value="${n.k}" ${n.k === A.nivel ? 'selected' : ''}>${n.n}</option>`).join('')}</select></label>
+      <label class="chk" style="align-self:end"><input type="checkbox" id="aTodos" ${A.todos ? 'checked' : ''}> Mostrar todos (también en ritmo, cumplidos y sin programación)</label>
     </section>${cuerpo}`;
   bindTabs();
   const on = (id, f) => { const e = $('#' + id); if (e) e.onchange = () => { f(e); pintarAlertas(); }; };
   on('aNiv', e => A.nivel = e.value); on('aA', e => { A.a = e.value; A.b = corteSemanaAntes(C, A.a); });
-  on('aB', e => A.b = e.value); on('aUo', e => A.uo = e.value); on('aPp', e => A.pp = e.value); on('aTodos', e => A.todos = e.checked);
+  on('aB', e => A.b = e.value); on('aUo', e => A.uo = e.value); on('aPp', e => A.pp = e.value); on('aTodos', e => A.todos = e.checked); on('aC2', e => A.c2 = e.value);
+  document.querySelectorAll('[data-ord]').forEach(h => h.onclick = () => { const k = h.dataset.ord, o = A.ord;
+    A.ord = !o || o.k !== k ? { k, d: -1 } : o.d < 0 ? { k, d: 1 } : null; pintarAlertas(); });
   $('#aRef').onclick = () => abrirAlertas(true);
   $('#aXls').onclick = descargarAlertas;
   $('#aPpt').onclick = generarPptAvance;
@@ -1337,11 +1365,11 @@ function descargarAlertas(){
   const A = S.alr, nv = NIVELES.find(n => n.k === A.nivel).n;
   const R = calcularAlertas(A.nivel); if (!R) return;
   const rx = v => Math.round((+v || 0) * 100) / 100;
-  const cab = ['Proyecto', 'Componente (finalidad)', 'SEC_FUNC', 'Concepto 1', 'Unidad orgánica', `Meta MEF ${MES[R.M]}`, `Ajuste programación ${MES[R.M]}`, `Devengado ${MES[R.M]} al ${R.cB ? corteTxt(A.b) : '—'}`, `Devengado ${MES[R.M]} al ${corteTxt(A.a)}`,
+  const cab = ['Concepto 1', 'Componente (finalidad)', 'SEC_FUNC', 'Proyecto', 'Unidad orgánica', 'PIM', `Meta MEF ${MES[R.M]}`, `Ajuste programación ${MES[R.M]}`, `Devengado ${MES[R.M]} al ${R.cB ? corteTxt(A.b) : '—'}`, `Devengado ${MES[R.M]} al ${corteTxt(A.a)}`,
     'Avance en la semana', '% del programado', 'Ritmo esperado %', 'Alerta'].concat(R.delMes.map(x => 'Devengado al ' + corteTxt(x.corte)));
-  const filas = R.filas.map(x => [x.pj, x.comp, A.nivel === 'pp' ? '' : pad4(x.sf), A.nivel === 'c2' ? x.c2 : '', x.uo, rx(x.mef), rx(x.prog), R.cB ? rx(x.devB) : '', rx(x.devA), R.cB ? rx(x.av) : '', x.pct == null ? '' : rx(x.pct * 100), Math.round(R.ritmo * 100), ALERTA[x.al].n].concat(x.evo.map(rx)));
+  const filas = R.filas.map(x => [A.nivel === 'c2' ? x.c2 : '', x.comp, A.nivel === 'pp' ? '' : pad4(x.sf), x.pj, x.uo, rx(x.pim), rx(x.mef), rx(x.prog), R.cB ? rx(x.devB) : '', rx(x.devA), R.cB ? rx(x.av) : '', x.pct == null ? '' : rx(x.pct * 100), Math.round(R.ritmo * 100), ALERTA[x.al].n].concat(x.evo.map(rx)));
   const blob = crearXlsx([{ nombre: 'Alertas por ' + nv, filas: [cab].concat(filas), cabecera: true, numDesde: 5, numHasta: cab.length, congelar: { c: 1, r: 1 }, filtro: true,
-    anchos: [50, 45, 10, 35, 14, 15, 18, 18, 18, 15, 13, 12, 20].concat(R.delMes.map(() => 16)) }]);
+    anchos: [35, 45, 10, 50, 14, 15, 15, 18, 18, 18, 15, 13, 12, 20].concat(R.delMes.map(() => 16)) }]);
   bajarArchivo(blob, `Alertas_avance_${nv}_${corteTxt(A.a).slice(0, 10)}.xlsx`);
 }
 
@@ -2169,7 +2197,7 @@ async function generarPptAvance(){
     const mill = v => 'S/ ' + ((+v || 0) / 1e6).toLocaleString('es-PE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M';
     const fechaLarga = c => { const m = String(c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}:\d{2}))?/); return m ? `${+m[3]} de ${MES_L[+m[2] - 1]} de ${m[1]}${m[4] && m[4] !== '00:00' ? ', ' + m[4] : ''}` : String(c || ''); };
     const NAVY = '07478B', AZ2 = '235CA4', CEL = '9FC2E8', TEAL = '5FE0C0', GRN = '1E8E5A', AMB = 'E89B1A', RED = 'E03A4A', GRIS = '5C636C', LIN = 'E0E5EB', SUAVE = 'F7F9FC', TINTA = '1F1F1F';
-    const colAl = al => ({ bad: RED, warn: AMB, ok: GRN })[ALERTA[al].c];
+    const colAl = al => ({ bad: RED, warn: AMB, ok: GRN, neutro: GRIS })[ALERTA[al].c];
     const ritmo = Math.round(R.ritmo * 100);
     const F = R.filas, T = F.reduce((t, x) => { t.prog += x.prog; t.mef += x.mef; t.devA += x.devA; t.devB += x.devB; return t; }, { prog: 0, mef: 0, devA: 0, devB: 0 });
     const pT = T.prog > .5 ? T.devA / T.prog : null;
