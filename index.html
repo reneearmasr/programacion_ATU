@@ -104,7 +104,8 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--
 .kpi small{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
 .kpi b{font-family:var(--mono);font-size:17px;font-weight:500;font-variant-numeric:tabular-nums}
 .kpi i{font-style:normal;font-size:11.5px;color:var(--muted)}
-.kpi.warn b{color:var(--warn)} .kpi.bad b{color:var(--bad)} .kpi.ok b{color:var(--ok)}
+.kpi.warn b{color:var(--warn)} @media (min-width:1001px){.kpis.k7{grid-template-columns:repeat(7,minmax(0,1fr))}}
+.kpi.bad b{color:var(--bad)} .kpi.ok b{color:var(--ok)}
 @media (max-width:1000px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
@@ -183,6 +184,12 @@ table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 .mes-fut{background:color-mix(in srgb,#7C3AED 10%,var(--surface2)) !important;color:var(--ink) !important}
 td.fcol{background:color-mix(in srgb,#7C3AED 4%,var(--surface))} .fut0{border-left:2px solid #7C3AED !important}
 .kpi.fut{border-left:4px solid #7C3AED}
+.kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)}
+.pill.al-bad{background:color-mix(in srgb,var(--bad) 14%,var(--surface));color:var(--bad)} .pill.al-warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));color:var(--warn)} .pill.al-ok{background:color-mix(in srgb,var(--ok) 14%,var(--surface));color:var(--ok)}
+.barra{position:relative;height:8px;background:var(--surface2);border-radius:4px;margin:4px 0 3px;min-width:90px} .barra span{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+.barra span.ok{background:var(--ok)} .barra span.warn{background:var(--warn)} .barra span.bad{background:var(--bad)} .barra i{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+td.mono{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+.pill.st-BORRADOR{background:var(--surface2)} .banner.info{background:color-mix(in srgb,var(--accent) 8%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));padding:10px 14px;border-radius:8px}
 .btn-link{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit;font-size:13px}
 .mefx{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;font-family:var(--mono);white-space:nowrap}
 .mefx b{font-weight:600}
@@ -1124,13 +1131,15 @@ function tabsOPP(){
   if (S.sesion.rol !== 'OPP') return '';
   const sel = k => S.ver === k || (k === 'form' && (S.ver === 'notas' || S.ver === 'nota'));
   const t = (k, n) => `<button class="tab" data-v="${k}" aria-selected="${sel(k)}">${n}</button>`;
-  return `<nav class="tabs" role="tablist">${t('bandeja','Bandeja de pedidos')}${t('avance','Avance por unidad')}${t('consolidado','Programación consolidada')}${t('form','Formulario por unidad')}${t('notasopp','Notas de modificación')}</nav>`;
+  return `<nav class="tabs" role="tablist">${t('bandeja','Bandeja de pedidos')}${t('avance','Avance por unidad')}${t('consolidado','Programación consolidada')}${t('alertas','Alertas de avance')}${t('form','Formulario por unidad')}${t('historial','Historial')}${t('notasopp','Notas de modificación')}</nav>`;
 }
 function bindTabs(){
   document.querySelectorAll('.tab').forEach(b => b.onclick = async () => {
     const v = b.dataset.v;
     if (v === 'form'){ await abrirUO(S.uo || S.unidades[0].uo); return; }
     if (v === 'consolidado'){ await abrirConsolidado(false); return; }
+    if (v === 'historial'){ await abrirHistorial(); return; }
+    if (v === 'alertas'){ await abrirAlertas(); return; }
     if (v === 'notasopp'){ if (S.opp.notasOk) { S.ver = 'notasopp'; pintarOPP(); } else await abrirNotasOPP(); return; }
     S.ver = v;
     if (S.opp.unidades) pintarOPP(); else await abrirOPP();
@@ -1143,8 +1152,228 @@ async function abrirOPP(){
   pintarOPP();
 }
 const ESTADOS = ['ENVIADO','OBSERVADO','APROBADO','BORRADOR'];
+/* ===================== ALERTAS DE AVANCE ENTRE CIERRES (OPP) =====================
+   Cada carga del SIAF guarda una foto del devengado (hoja Cortes). Aquí se compara el cierre elegido con otro anterior,
+   por Proyecto, SEC_FUNC o Concepto, contra lo programado por las áreas para el mes del cierre:
+   SIN AVANCE (el devengado del mes no se movió), LENTO (va por debajo del ritmo esperado del mes), RETROCESO (bajó),
+   DEVENGADO SIN PROGRAMAR, EN RITMO y CUMPLIDO. */
+S.alr = { data: null, nivel: 'c2', a: '', b: '', uo: '', pp: '', todos: false };
+const NIVELES = [{ k: 'pp', n: 'Proyecto' }, { k: 'sf', n: 'SEC_FUNC' }, { k: 'c2', n: 'Concepto' }];
+const ALERTA = { RETROCESO: { n: 'Retroceso', c: 'bad', o: 0 }, 'SIN AVANCE': { n: 'Sin avance', c: 'bad', o: 1 }, LENTO: { n: 'Avance lento', c: 'warn', o: 2 },
+  'SIN PROGRAMAR': { n: 'Devengado sin programar', c: 'warn', o: 3 }, 'EN RITMO': { n: 'En ritmo', c: 'ok', o: 4 }, CUMPLIDO: { n: 'Cumplido', c: 'ok', o: 5 } };
+const MES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','setiembre','octubre','noviembre','diciembre'];
+const corteTxt = c => { const m = String(c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/); return m ? `${m[3]}.${m[2]}.${m[1]}${m[4] && m[4] + m[5] !== '0000' ? ' ' + m[4] + ':' + m[5] : ''}` : String(c || ''); };
+async function abrirAlertas(forzar){
+  busy(true);
+  try {
+    if (!S.cons.data) S.cons.data = await run('api_consolidado');
+    if (!S.alr.data || forzar) S.alr.data = await run('api_cortes', 150);
+    const C = S.alr.data.cortes;
+    if (C.length && (!S.alr.a || !C.some(x => x.corte === S.alr.a))) { S.alr.a = C[C.length - 1].corte; S.alr.b = C.length > 1 ? C[C.length - 2].corte : ''; }
+  } finally { busy(false); }
+  S.ver = 'alertas'; pintarOPP();
+}
+/** Calcula las filas de alerta del nivel elegido, comparando el cierre A con el B */
+function calcularAlertas(nivel){
+  const A = S.alr, D = A.data, C = D.cortes;
+  const cA = C.find(x => x.corte === A.a), cB = C.find(x => x.corte === A.b) || null;
+  if (!cA) return null;
+  const mm = A.a.match(/^(\d{4})-(\d{2})-(\d{2})/), M = +mm[2] - 1, dia = +mm[3], dm = new Date(+mm[1], M + 1, 0).getDate();
+  const ritmo = Math.min(1, dia / dm);
+  const ini = S.cons.data.ini;
+  const porId = {}; (S.cons.data.filas || []).forEach(r => { if (r.id) porId[r.id] = r; });
+  const delMes = C.filter(x => +x.corte.slice(5, 7) - 1 === M && x.corte <= A.a).slice(-6);
+  const nodos = {};
+  Object.keys(D.lineas).forEach(id => {
+    const L = D.lineas[id], r = porId[id];
+    if (A.uo && L.uo !== A.uo) return;
+    const pj = codNom(L.pp);
+    if (A.pp && pj !== A.pp) return;
+    const k = nivel === 'pp' ? pj : nivel === 'sf' ? pj + '|' + L.sf : pj + '|' + L.sf + '|' + L.c2;
+    const N = nodos[k] = nodos[k] || { k, pj, sf: L.sf, fi: L.fi, c2: L.c2, uos: {}, pim: 0, prog: 0, mef: 0, devA: 0, devB: 0, acA: 0, acB: 0, cerA: 0, evo: delMes.map(() => 0), n: 0, est: {} };
+    const a = cA.d[id], b = cB ? cB.d[id] : null;
+    const P = r ? consProg(r) : null;
+    N.uos[L.uo] = 1; N.n++; N.pim += L.pim;
+    N.prog += r ? (M < ini ? (+(r.pv || [])[M] || 0) : (+P.m[M] || 0)) : 0;
+    N.mef += r && r.mef ? +r.mef[M] || 0 : 0;
+    if (a){ N.devA += a[2 + M]; N.acA += a[0]; N.cerA += a[1]; }
+    if (b){ N.devB += b[2 + M]; N.acB += b[0]; }
+    delMes.forEach((x, j) => { const v = x.d[id]; if (v) N.evo[j] += v[2 + M]; });
+  });
+  const filas = Object.values(nodos).map(N => {
+    const av = N.devA - N.devB, pct = N.prog > .5 ? N.devA / N.prog : null;
+    let al;
+    if (N.prog <= .5) al = N.devA > .5 ? 'SIN PROGRAMAR' : null;
+    else if (cB && av < -.5) al = 'RETROCESO';
+    else if (pct >= .995) al = 'CUMPLIDO';
+    else if (cB && av <= .5) al = 'SIN AVANCE';
+    else if (pct * 100 < ritmo * 100 - 25) al = 'LENTO';
+    else al = 'EN RITMO';
+    const et = nivel === 'pp' ? N.pj : nivel === 'sf' ? `SEC_FUNC ${pad4(N.sf)} · ${cap(String(N.fi || '').replace(/^\d+\.\s*/, ''))}` : (N.c2 || 'Sin concepto');
+    const sub = nivel === 'pp' ? '' : nivel === 'sf' ? N.pj : `SEC_FUNC ${pad4(N.sf)} · ${N.pj}`;
+    return Object.assign(N, { av, pct, al, et, sub, uo: Object.keys(N.uos).sort().join(', ') });
+  }).filter(x => x.al);
+  filas.sort((x, y) => ALERTA[x.al].o - ALERTA[y.al].o || (y.prog - y.devA) - (x.prog - x.devA));
+  return { filas, M, dia, dm, ritmo, cA, cB, delMes };
+}
+function pintarAlertas(){
+  const A = S.alr, D = A.data || { cortes: [], lineas: {} }, C = D.cortes;
+  const opcC = sel => C.slice().reverse().map(x => `<option value="${esc(x.corte)}" ${x.corte === sel ? 'selected' : ''}>${esc(corteTxt(x.corte))}</option>`).join('');
+  const uos = [...new Set(Object.values(D.lineas).map(l => l.uo))].sort();
+  const pjs = [...new Set(Object.values(D.lineas).map(l => codNom(l.pp)))].sort();
+  const R = C.length ? calcularAlertas(A.nivel) : null;
+  let cuerpo = '';
+  if (!C.length) cuerpo = `<section class="panel"><div class="empty">Aún no hay cierres guardados. Cada carga del SIAF guarda uno desde ahora; para tener los anteriores, en el Google Sheet usa <b>POI ATU → Reconstruir el historial de cierres desde la carpeta de Drive</b>.</div></section>`;
+  else if (R){
+    const F = R.filas, vis = A.todos ? F : F.filter(x => ['RETROCESO', 'SIN AVANCE', 'LENTO', 'SIN PROGRAMAR'].includes(x.al));
+    const T = F.reduce((t, x) => { t.prog += x.prog; t.devA += x.devA; t.devB += x.devB; return t; }, { prog: 0, devA: 0, devB: 0 });
+    const cnt = {}; F.forEach(x => cnt[x.al] = (cnt[x.al] || 0) + 1);
+    const pT = T.prog > .5 ? T.devA / T.prog * 100 : null, mes = MES_L[R.M];
+    const nv = NIVELES.find(n => n.k === A.nivel).n;
+    cuerpo = `<div class="kpis k7">
+      <div class="kpi"><small>Programado ${mes}</small><b>${fmtM(T.prog)}</b><i>por las áreas (ajuste a la meta MEF)</i></div>
+      <div class="kpi"><small>Devengado ${mes} al ${esc(corteTxt(A.a))}</small><b>${fmtM(T.devA)}</b><i>${pT == null ? '—' : pT.toFixed(1) + '% del programado'} · ritmo esperado ${Math.round(R.ritmo * 100)}%</i></div>
+      <div class="kpi ${R.cB && T.devA - T.devB <= .5 ? 'bad' : ''}"><small>Avance entre cierres</small><b>${R.cB ? (T.devA - T.devB >= 0 ? '+' : '') + fmtM(T.devA - T.devB) : '—'}</b><i>${R.cB ? 'desde el ' + esc(corteTxt(A.b)) : 'elige un cierre para comparar'}</i></div>
+      ${['RETROCESO', 'SIN AVANCE', 'LENTO', 'SIN PROGRAMAR'].map(k => `<div class="kpi ${cnt[k] ? ALERTA[k].c : ''}"><small>${ALERTA[k].n}</small><b>${cnt[k] || 0}</b><i>${nv.toLowerCase()}${(cnt[k] || 0) === 1 ? '' : 's'}</i></div>`).join('')}
+    </div>
+    <section class="panel"><div class="tbl-wrap" style="max-height:70vh;overflow:auto"><table class="g alr"><thead><tr><th class="lin">${esc(nv)}</th><th class="l">Unidad</th><th>Programado<br><span class="thn">${esc(MES[R.M])}</span></th><th>Meta MEF<br><span class="thn">${esc(MES[R.M])}</span></th>
+      <th>Devengado ${esc(MES[R.M])}<br><span class="thn">al ${esc(R.cB ? corteTxt(A.b) : '—')}</span></th><th>Devengado ${esc(MES[R.M])}<br><span class="thn">al ${esc(corteTxt(A.a))}</span></th><th>Avance entre<br>cierres</th>
+      <th>% del programado<br><span class="thn">ritmo esperado ${Math.round(R.ritmo * 100)}%</span></th><th class="l">Evolución en ${esc(MES[R.M])}<br><span class="thn">${R.delMes.map(x => esc(corteTxt(x.corte).slice(0, 5))).join(' → ')}</span></th><th class="l">Alerta</th></tr></thead>
+      <tbody>${vis.map(x => `<tr><td class="lin"><div class="ln" title="${esc(x.et)}">${esc(x.et)}</div>${x.sub ? `<div class="meta" title="${esc(x.sub)}">${esc(x.sub.length > 110 ? x.sub.slice(0, 108) + '…' : x.sub)}</div>` : ''}</td><td class="l">${esc(x.uo)}</td>
+        <td class="num">${fmt(x.prog)}</td><td class="num">${fmt(x.mef)}</td><td class="num">${R.cB ? fmt(x.devB) : '—'}</td><td class="num"><b>${fmt(x.devA)}</b></td>
+        <td class="num ${x.av < -.5 ? 'diff-dn' : x.av > .5 ? 'diff-up' : ''}">${R.cB ? (x.av > .5 ? '+' : '') + fmt(x.av) : '—'}</td>
+        <td class="num">${x.pct == null ? '—' : `<div class="barra"><span style="width:${Math.min(100, x.pct * 100)}%" class="${ALERTA[x.al].c}"></span><i style="left:${Math.round(R.ritmo * 100)}%"></i></div>${(x.pct * 100).toFixed(1)}%`}</td>
+        <td class="l mono">${x.evo.map(v => fmtM(v)).join(' → ')}</td><td class="l"><span class="pill al-${ALERTA[x.al].c}">${ALERTA[x.al].n}</span></td></tr>`).join('')
+        || `<tr><td class="l" colspan="10"><div class="empty">Sin alertas con estos filtros${A.todos ? '' : ': todo va en ritmo o cumplido'}.</div></td></tr>`}</tbody></table></div>
+      <p class="meta" style="margin:10px 2px 0">Mes del cierre: <b>${esc(mes)}</b> (día ${R.dia} de ${R.dm}: ritmo esperado ${Math.round(R.ritmo * 100)}% de lo programado). <b>Sin avance</b>: el devengado del mes no cambió desde el cierre anterior. <b>Avance lento</b>: más de 25 puntos por debajo del ritmo esperado. El programado es la versión «${esc((VERSIONES.find(v => v.k === S.cons.ver) || {}).n || '')}» del consolidado.</p></section>`;
+  }
+  $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
+    <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio || S.config.anio)} · comparación entre cierres del SIAF</div><h2>Alertas de avance</h2></div>
+      <span class="grow"></span><button class="btn sm" id="aRef">↻ Actualizar</button>
+      <button class="btn" id="aPpt" ${R && R.filas.length ? '' : 'disabled'}>📊 Generar PPT de alertas</button>
+      <button class="btn primary" id="aXls" ${R && R.filas.length ? '' : 'disabled'}>⭳ Descargar Excel</button></div>
+    <section class="panel cons-f">
+      <label class="f">Nivel<select class="inp" id="aNiv">${NIVELES.map(n => `<option value="${n.k}" ${n.k === A.nivel ? 'selected' : ''}>${n.n}</option>`).join('')}</select></label>
+      <label class="f">Cierre actual<select class="inp" id="aA">${opcC(A.a)}</select></label>
+      <label class="f">Comparar con el cierre<select class="inp" id="aB"><option value="">— Ninguno —</option>${opcC(A.b)}</select></label>
+      <label class="f">Unidad orgánica<select class="inp" id="aUo"><option value="">Todas</option>${uos.map(u => `<option ${u === A.uo ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
+      <label class="f">Proyecto<select class="inp" id="aPp"><option value="">Todos</option>${pjs.map(u => `<option ${u === A.pp ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
+      <label class="chk" style="align-self:end"><input type="checkbox" id="aTodos" ${A.todos ? 'checked' : ''}> Mostrar también los que van en ritmo o cumplidos</label>
+    </section>${cuerpo}`;
+  bindTabs();
+  const on = (id, f) => { const e = $('#' + id); if (e) e.onchange = () => { f(e); pintarAlertas(); }; };
+  on('aNiv', e => A.nivel = e.value); on('aA', e => { A.a = e.value; const i = C.findIndex(x => x.corte === A.a); if (A.b >= A.a) A.b = i > 0 ? C[i - 1].corte : ''; });
+  on('aB', e => A.b = e.value); on('aUo', e => A.uo = e.value); on('aPp', e => A.pp = e.value); on('aTodos', e => A.todos = e.checked);
+  $('#aRef').onclick = () => abrirAlertas(true);
+  $('#aXls').onclick = descargarAlertas;
+  $('#aPpt').onclick = generarPptAvance;
+}
+function descargarAlertas(){
+  const A = S.alr, nv = NIVELES.find(n => n.k === A.nivel).n;
+  const R = calcularAlertas(A.nivel); if (!R) return;
+  const rx = v => Math.round((+v || 0) * 100) / 100;
+  const cab = [nv, 'Detalle', 'Unidad orgánica', `Programado ${MES[R.M]}`, `Meta MEF ${MES[R.M]}`, `Devengado ${MES[R.M]} al ${R.cB ? corteTxt(A.b) : '—'}`, `Devengado ${MES[R.M]} al ${corteTxt(A.a)}`,
+    'Avance entre cierres', '% del programado', 'Ritmo esperado %', 'Alerta'].concat(R.delMes.map(x => 'Devengado al ' + corteTxt(x.corte)));
+  const filas = R.filas.map(x => [x.et, x.sub, x.uo, rx(x.prog), rx(x.mef), R.cB ? rx(x.devB) : '', rx(x.devA), R.cB ? rx(x.av) : '', x.pct == null ? '' : rx(x.pct * 100), Math.round(R.ritmo * 100), ALERTA[x.al].n].concat(x.evo.map(rx)));
+  const blob = crearXlsx([{ nombre: 'Alertas por ' + nv, filas: [cab].concat(filas), cabecera: true, numDesde: 3, numHasta: cab.length, congelar: { c: 1, r: 1 }, filtro: true,
+    anchos: [50, 40, 14, 15, 15, 18, 18, 15, 13, 12, 20].concat(R.delMes.map(() => 16)) }]);
+  bajarArchivo(blob, `Alertas_avance_${nv}_${corteTxt(A.a).slice(0, 10)}.xlsx`);
+}
+
+/* ===================== HISTORIAL (OPP) =====================
+   Cada vez que un área guarda o envía, el servidor guarda una foto completa de su programación.
+   Aquí OPP elige una fecha de corte y ve cómo estaba declarada la programación ese día (y las versiones anteriores). */
+const hoyISO = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
+S.hist = { corte: '', uo: '', data: null, sel: '', foto: null };
+async function abrirHistorial(){
+  if (!S.hist.corte) S.hist.corte = hoyISO();
+  busy(true);
+  try { S.hist.data = await run('api_historial', S.hist.corte, S.hist.uo); S.hist.foto = null; S.hist.sel = S.hist.uo || ''; }
+  finally { busy(false); }
+  S.ver = 'historial'; pintarOPP();
+}
+const ACC_HIST = { BORRADOR: 'Guardó borrador', ENVIADO: 'Envió a OPP' };
+const fechaCorteTxt = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}.${m[2]}.${m[1]}` : ''; };
+function pintarHistorial(){
+  const H = S.hist, D = H.data || { unidades: [] }, U = D.unidades;
+  const conReg = U.filter(u => u.ultima).length;
+  const uSel = H.sel ? U.find(u => u.uo === H.sel) : null;
+  const foto = H.foto || (uSel && uSel.ultima) || null;
+  const todas = (S.opp.unidades || S.unidades || []).map(u => u.uo).sort();
+  $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
+    <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio || S.config.anio)} · lo declarado por las áreas</div><h1>Historial al corte ${esc(fechaCorteTxt(H.corte))}</h1></div>
+      <div class="acts"><button class="btn" id="hXls" ${conReg ? '' : 'disabled'}>⭳ Descargar Excel del corte</button></div></div>
+    <section class="panel cons-f" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+      <label class="f">Fecha de corte<input class="inp" type="date" id="hCorte" value="${esc(H.corte)}" max="${hoyISO()}"></label>
+      <label class="f">Unidad orgánica<select class="inp" id="hUo"><option value="">Todas</option>${todas.map(u => `<option ${u === H.uo ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
+      <div class="f" style="align-self:end"><button class="btn primary" id="hVer">Consultar</button></div>
+      <p class="meta" style="align-self:end;margin:0">Cada vez que un área <b>guarda</b> o <b>envía</b> queda una foto completa de su programación. Se muestra la última foto de cada unidad hasta el fin del día elegido.</p>
+    </section>
+    <section class="panel"><div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Unidad orgánica</th><th class="l">Órgano</th><th class="l">Último registro hasta el corte</th><th class="l">Acción</th><th class="l">Usuario</th><th>Registros</th><th></th></tr></thead><tbody>
+      ${U.map(u => `<tr ${u.uo === H.sel ? 'style="background:var(--surface2)"' : ''}><td class="l"><b>${esc(u.uo)}</b></td><td class="l">${esc(u.og)}</td>
+        <td class="l">${u.ultima ? esc(u.ultima.fecha) : '<span class="meta">Sin registro a esa fecha</span>'}</td>
+        <td class="l">${u.ultima ? `<span class="pill st-${u.ultima.accion}">${esc(ACC_HIST[u.ultima.accion] || u.ultima.accion)}</span>` : '—'}</td>
+        <td class="l">${u.ultima ? esc(u.ultima.usuario) : '—'}</td><td class="num">${u.fotos.length}</td>
+        <td>${u.ultima ? `<button class="btn sm" data-hver="${esc(u.uo)}">Ver</button>` : ''}</td></tr>`).join('') || `<tr><td class="l" colspan="7"><div class="empty">Sin unidades.</div></td></tr>`}
+    </tbody></table></div><p class="meta" style="margin:10px 2px 0">${conReg} de ${U.length} unidades tienen al menos un registro hasta el ${esc(fechaCorteTxt(H.corte))}.</p></section>
+    ${uSel && foto ? historialDetalle(uSel, foto) : ''}`;
+  bindTabs();
+  $('#hVer').onclick = async () => { H.corte = $('#hCorte').value || hoyISO(); H.uo = $('#hUo').value; await abrirHistorial(); };
+  document.querySelectorAll('[data-hver]').forEach(b => b.onclick = () => { H.sel = b.dataset.hver; H.foto = null; pintarHistorial(); const d = $('#hDet'); if (d) d.scrollIntoView({ behavior: 'smooth' }); });
+  const sf = $('#hFoto'); if (sf) sf.onchange = async () => { busy(true); try { H.foto = await run('api_fotoHistorial', sf.value); } finally { busy(false); } pintarHistorial(); $('#hDet').scrollIntoView(); };
+  $('#hXls').onclick = descargarHistorial;
+}
+/** Tabla de una foto: Proyecto › SEC_FUNC › Concepto › Clasificador, meses abiertos con monto, meta MEF y estado declarado */
+function historialDetalle(u, F){
+  const ini = Math.max(0, (F.mesIni || 1) - 1), meses = MES.map((m, i) => i).filter(i => i >= ini);
+  const fut = F.lineas.some(L => L.fp && L.f.some(Boolean)) ? F.lineas.find(L => L.fp).fp : '';
+  const Ls = F.lineas.slice().sort((a, b) => cmpTxt(a.pp, b.pp) || a.sf - b.sf || cmpTxt(a.c2, b.c2) || cmpTxt(String(a.cl).split('-')[0], String(b.cl).split('-')[0]));
+  const nC = 3 + meses.length * 2 + 2 + (fut ? 3 : 0);
+  let h = '', pj = null, sf = null, c2 = null;
+  Ls.forEach(L => {
+    if (L.pp !== pj){ pj = L.pp; sf = null; h += `<tr class="pjh"><td class="lin" colspan="${nC}"><div class="pjk">Proyecto</div><div class="pjn">${esc(L.pp ? codNom(L.pp) : 'Sin proyecto')}</div></td></tr>`; }
+    if (L.sf !== sf){ sf = L.sf; c2 = null; h += `<tr class="sfh"><td class="lin" colspan="${nC}"><div class="m">SEC_FUNC ${pad4(L.sf)}</div><div class="ln">${esc(cap(String(L.fi || '').replace(/^\d+\.\s*/, '')))}</div></td></tr>`; }
+    if (L.c2 !== c2){ c2 = L.c2; h += `<tr class="c2h"><td class="lin" colspan="${nC}"><div class="c2n">${esc(L.c2 || 'Sin concepto')}</div></td></tr>`; }
+    const tot = L.m.reduce((a, b) => a + b, 0);
+    h += `<tr><td class="lin"><div class="m">${esc(String(L.cl).split('-')[0])}${L.mod ? ' <span class="chip">MODIFICADO</span>' : ''}</div><div class="ln">${esc(cap(String(L.cl).split('-').slice(1).join('-')))}</div><div class="meta">${esc(abrev(L.fu))}${L.just ? ' · <b>Justificación:</b> ' + esc(L.just) : ''}</div></td>
+      <td class="num">${fmt(L.pim)}</td><td class="num closed">${fmt(L.m.slice(0, ini).reduce((a, b) => a + b, 0))}</td>
+      ${meses.map(i => `<td class="num">${fmt(L.m[i])}${L.mef ? `<span class="mefx">MEF ${fmt(L.mef[i])}</span>` : ''}</td><td class="l"><span class="dtx">${esc(L.d[i] || '—')}</span></td>`).join('')}
+      ${fut ? [0, 1, 2].map(k => `<td class="num fcol">${fmt(L.f[k])}${L.fd[k] ? `<span class="dtx">${esc(L.fd[k])}</span>` : ''}</td>`).join('') : ''}
+      <td class="num">${fmt(tot)}</td><td class="num sdc">${fmt(L.sd)}</td></tr>`;
+  });
+  return `<section class="panel" id="hDet"><div class="tools"><b class="grow">${esc(u.uo)} · ${esc(ACC_HIST[F.accion] || F.accion)} el ${esc(F.fecha)} por ${esc(F.usuario)}</b>
+      <label class="f" style="min-width:320px">Ver otra versión de ${esc(u.uo)}<select class="inp" id="hFoto">${u.fotos.map(x => `<option value="${esc(x.snap)}" ${x.snap === F.snap ? 'selected' : ''}>${esc(x.fecha)} · ${esc(ACC_HIST[x.accion] || x.accion)} · ${x.modificadas} modificada${x.modificadas === 1 ? '' : 's'}</option>`).join('')}</select></label></div>
+    ${F.just ? `<div class="banner info" style="margin:0 0 12px"><b>Justificación general:</b> ${esc(F.just)}</div>` : ''}
+    <div class="tbl-wrap" style="max-height:70vh;overflow:auto"><table class="g"><thead><tr><th class="lin">Proyecto › SEC_FUNC › concepto › clasificador</th><th>PIM</th><th>Ejecutado<br><span class="thn">${MES[0]}–${MES[ini - 1] || ''}</span></th>
+      ${meses.map(i => `<th>${MES[i]}<br><span class="thn">monto · meta MEF</span></th><th class="l dsc-h">Estado actual ${MES[i]}<br><span class="thn">¿a qué corresponde?</span></th>`).join('')}
+      ${fut ? ['Ene', 'Feb', 'Mar'].map(m => `<th class="mes-fut">${m} ${esc(fut.slice(0, 4))}</th>`).join('') : ''}<th>Anual</th><th>Saldo<br>declarado</th></tr></thead>
+      <tbody>${h}</tbody></table></div></section>`;
+}
+async function descargarHistorial(){
+  const H = S.hist, U = (H.data || { unidades: [] }).unidades.filter(u => u.ultima);
+  if (!U.length) return;
+  busy(true);
+  try {
+    const rx = v => Math.round((+v || 0) * 100) / 100;
+    const ini = Math.min(...U.map(u => (u.ultima.mesIni || 1) - 1));
+    const meses = MES.map((m, i) => i).filter(i => i >= ini);
+    const cab = ['Unidad orgánica', 'Órgano', 'Fecha del registro', 'Acción', 'Usuario', 'Proyecto', 'Componente (finalidad)', 'SEC_FUNC', 'Clasificador', 'Fuente', 'Concepto', 'PIM']
+      .concat(MES.map(m => m + ' (monto)')).concat([].concat(...meses.map(i => [MES[i] + ' meta MEF', MES[i] + ' estado actual y a qué corresponde'])))
+      .concat(['Total anual', 'Saldo declarado', 'Modificada', 'Justificación']);
+    const filas = [];
+    U.forEach(u => u.ultima.lineas.forEach(L => filas.push([u.uo, u.og, u.ultima.fecha, ACC_HIST[u.ultima.accion] || u.ultima.accion, u.ultima.usuario, codNom(L.pp), codNom(L.fi), pad4(L.sf), L.cl, L.fu, L.c2, rx(L.pim)]
+      .concat(L.m.map(rx)).concat([].concat(...meses.map(i => [L.mef ? rx(L.mef[i]) : '', L.d[i] || ''])))
+      .concat([rx(L.m.reduce((a, b) => a + b, 0)), rx(L.sd), L.mod ? 'SI' : '', L.just]))));
+    const blob = crearXlsx([{ nombre: 'Al corte ' + fechaCorteTxt(H.corte), filas: [cab].concat(filas), cabecera: true, numDesde: 11, numHasta: cab.length, congelar: { c: 2, r: 1 }, filtro: true,
+      anchos: [14, 10, 18, 16, 12, 40, 40, 10, 50, 26, 30, 14].concat(MES.map(() => 13)).concat([].concat(...meses.map(() => [13, 40]))).concat([14, 14, 11, 40]) }]);
+    bajarArchivo(blob, `Historial_programacion_al_${fechaCorteTxt(H.corte)}.xlsx`);
+  } finally { busy(false); }
+}
+
 function pintarOPP(){
   if (S.ver === 'notasopp') return pintarNotasOPP();
+  if (S.ver === 'historial') return pintarHistorial();
+  if (S.ver === 'alertas') return pintarAlertas();
   if (S.ver === 'consolidado') return pintarConsolidado();
   const U = S.opp.unidades || [], E = S.opp.envios || [];
   const cnt = {}; U.forEach(u => cnt[u.estado] = (cnt[u.estado] || 0) + 1);
@@ -1808,6 +2037,103 @@ function bajarArchivo(blob, nombre){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
+/* ===================== PPT DE ALERTAS =====================
+   Se arma en el navegador con PptxGenJS (se carga solo al pulsar el botón) a partir de los clasificadores
+   que cumplen los filtros del consolidado y la versión de programación elegida. Alertas:
+   1) avance acumulado: devengado vs meta MEF de los meses cerrados (% logrado < 90 %);
+   2) caídas: programado (ajuste) por debajo de la meta MEF en los meses abiertos;
+   3) saldos: saldo declarado por las áreas y PIM sin programar;
+   4) unidades orgánicas que aún no envían o tienen el pedido observado. */
+async function cargarPptx(){
+  if (window.PptxGenJS) return;
+  const urls = ['https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js', 'https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js'];
+  for (const u of urls){
+    try { await new Promise((ok, ko) => { const sc = document.createElement('script'); sc.src = u; sc.onload = ok; sc.onerror = ko; document.head.appendChild(sc); }); if (window.PptxGenJS) return; } catch (e) {}
+  }
+  throw new Error('No se pudo cargar el generador de PowerPoint. Revisa la conexión a internet e inténtalo de nuevo.');
+}
+async function generarPptAvance(){
+  busy(true);
+  try {
+    await cargarPptx();
+    const A = S.alr, D = S.cons.data, nvSel = NIVELES.find(n => n.k === A.nivel).n;
+    const R = calcularAlertas(A.nivel), RP = calcularAlertas('pp');
+    if (!R) throw new Error('Elige un cierre.');
+    const mes = MES_L[R.M], fmtS = v => Math.round(+v || 0).toLocaleString('es-PE'), pctS = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+    const NAVY = '0B2A4A', GOLD = 'C9A227', RED = 'C0392B', AMB = 'B7791F', GRN = '2F855A', GRIS = '5B6B7E', FONDO = 'F4F6F9';
+    const col = al => ({ bad: RED, warn: AMB, ok: GRN })[ALERTA[al].c];
+    const filtros = [A.uo && 'Unidad: ' + A.uo, A.pp && 'Proyecto: ' + A.pp].filter(Boolean).join(' · ') || 'Todos los proyectos y unidades';
+    const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_WIDE'; pptx.author = 'OPP – ATU'; pptx.title = 'Alertas de avance de inversiones';
+    const pie = `Fuente: cierres del SIAF del ${corteTxt(A.b) || '—'} y ${corteTxt(A.a)}; programación del formulario «Programación y Modificación de Inversiones». ${filtros}.`;
+    const base = (sl, t, sub) => { sl.background = { color: 'FFFFFF' };
+      sl.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.9, fill: { color: NAVY } });
+      sl.addText(t, { x: 0.5, y: 0.12, w: 12.3, h: 0.45, fontFace: 'Calibri', fontSize: 22, bold: true, color: 'FFFFFF' });
+      if (sub) sl.addText(sub, { x: 0.5, y: 0.52, w: 12.3, h: 0.3, fontFace: 'Calibri', fontSize: 12, color: 'D6DEE8' });
+      sl.addText(pie, { x: 0.5, y: 7.05, w: 12.3, h: 0.3, fontFace: 'Calibri', fontSize: 9, color: GRIS }); };
+    const corto = (t, n) => { t = String(t || ''); return t.length > n ? t.slice(0, n - 1).trim() + '…' : t; };
+    const tabla = (sl, cab, filas, anchos, color, izq) => {
+      const MAX = 13, extra = filas.length - MAX;
+      const rows = [cab.map(t => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: NAVY }, fontSize: 10.5, align: 'center', valign: 'middle' } }))]
+        .concat(filas.slice(0, MAX).map((f, k) => f.map((t, j) => ({ text: String(t), options: { fontSize: 10, align: j < (izq || 1) ? 'left' : 'right', color: (color && color(k, j)) || '1F2937', fill: { color: k % 2 ? 'FFFFFF' : FONDO } } }))));
+      sl.addTable(rows, { x: 0.5, y: 1.15, w: 12.33, colW: anchos, fontFace: 'Calibri', border: { type: 'solid', pt: 0.5, color: 'D6DEE8' }, rowH: 0.36, valign: 'middle', autoPage: false });
+      if (extra > 0) sl.addText(`… y ${extra} más (ver el Excel de alertas).`, { x: 0.5, y: 6.7, w: 12, h: 0.3, fontSize: 10, italic: true, color: GRIS }); };
+    const vacio = (sl, t) => sl.addText(t, { x: 0.5, y: 3.2, w: 12.3, h: 0.8, fontSize: 18, color: GRN, align: 'center', bold: true });
+    const F = R.filas, T = F.reduce((t, x) => { t.prog += x.prog; t.devA += x.devA; t.devB += x.devB; return t; }, { prog: 0, devA: 0, devB: 0 });
+    const cnt = {}; F.forEach(x => cnt[x.al] = (cnt[x.al] || 0) + 1);
+    // 1. Portada
+    { const sl = pptx.addSlide(); sl.background = { color: NAVY };
+      sl.addShape(pptx.ShapeType.rect, { x: 0.6, y: 2.2, w: 0.12, h: 2.2, fill: { color: GOLD } });
+      sl.addText('Alertas de avance de inversiones', { x: 0.95, y: 2.1, w: 11.5, h: 0.9, fontSize: 36, bold: true, color: 'FFFFFF', fontFace: 'Calibri' });
+      sl.addText(`Devengado de ${mes} frente a lo programado, comparando cierres del SIAF`, { x: 0.95, y: 2.95, w: 11.5, h: 0.5, fontSize: 18, color: 'D6DEE8', fontFace: 'Calibri' });
+      sl.addText(`Cierre ${corteTxt(A.a)}${A.b ? ' vs. ' + corteTxt(A.b) : ''} · Año fiscal ${D.anio}\nAlertas por ${nvSel.toLowerCase()} · ${filtros}`, { x: 0.95, y: 3.6, w: 11.5, h: 0.8, fontSize: 14, color: 'FFFFFF', fontFace: 'Calibri' });
+      sl.addText('Autoridad de Transporte Urbano para Lima y Callao · Oficina de Planeamiento y Presupuesto', { x: 0.95, y: 6.6, w: 11.5, h: 0.4, fontSize: 12, color: GOLD, fontFace: 'Calibri' }); }
+    // 2. Resumen
+    { const sl = pptx.addSlide(); base(sl, `Resumen al cierre ${corteTxt(A.a)}`, `Mes de ${mes}: día ${R.dia} de ${R.dm} · ritmo esperado ${Math.round(R.ritmo * 100)}% de lo programado · alertas por ${nvSel.toLowerCase()}`);
+      const p = T.prog > .5 ? T.devA / T.prog : null, av = T.devA - T.devB;
+      const k = [[`Programado ${mes}`, 'S/ ' + fmtS(T.prog), 'ajuste de las áreas a la meta MEF', NAVY],
+        [`Devengado ${mes}`, 'S/ ' + fmtS(T.devA), `${pctS(p)} del programado (esperado ${Math.round(R.ritmo * 100)}%)`, p == null ? GRIS : p * 100 >= R.ritmo * 100 - 10 ? GRN : p * 100 >= R.ritmo * 100 - 25 ? AMB : RED],
+        ['Avance entre cierres', R.cB ? (av >= 0 ? '+' : '') + 'S/ ' + fmtS(av) : '—', R.cB ? `del ${corteTxt(A.b)} al ${corteTxt(A.a)}` : 'sin cierre de comparación', R.cB && av <= .5 ? RED : GRN],
+        ['Sin avance', String(cnt['SIN AVANCE'] || 0), `${nvSel.toLowerCase()}s sin devengado nuevo`, cnt['SIN AVANCE'] ? RED : GRN],
+        ['Avance lento', String(cnt.LENTO || 0), '25 puntos o más bajo el ritmo', cnt.LENTO ? AMB : GRN],
+        ['Retroceso / sin programar', String((cnt.RETROCESO || 0) + (cnt['SIN PROGRAMAR'] || 0)), 'devengado que bajó o sin programación', (cnt.RETROCESO || cnt['SIN PROGRAMAR']) ? AMB : GRN]];
+      k.forEach((c, i) => { const x = 0.5 + (i % 3) * 4.15, y = 1.3 + Math.floor(i / 3) * 2.6;
+        sl.addShape(pptx.ShapeType.rect, { x, y, w: 3.95, h: 2.3, fill: { color: FONDO }, line: { color: 'D6DEE8' } });
+        sl.addShape(pptx.ShapeType.rect, { x, y, w: 0.1, h: 2.3, fill: { color: c[3] } });
+        sl.addText(c[0].toUpperCase(), { x: x + 0.3, y: y + 0.2, w: 3.5, h: 0.4, fontSize: 12, bold: true, color: GRIS });
+        sl.addText(c[1], { x: x + 0.3, y: y + 0.65, w: 3.5, h: 0.8, fontSize: 30, bold: true, color: c[3] });
+        sl.addText(c[2], { x: x + 0.3, y: y + 1.5, w: 3.5, h: 0.6, fontSize: 12, color: '1F2937' }); }); }
+    // 3. Evolución por cierre (gráfico)
+    { const sl = pptx.addSlide(); base(sl, `Devengado de ${mes} en cada cierre`, 'Cómo avanzó el devengado del mes en los cierres del SIAF, frente a lo programado y al ritmo esperado');
+      const labs = R.delMes.map(x => corteTxt(x.corte).slice(0, 5)), tot = R.delMes.map((_, j) => Math.round(F.reduce((a, x) => a + x.evo[j], 0)));
+      const esp = R.delMes.map(x => { const d = +x.corte.slice(8, 10); return Math.round(T.prog * Math.min(1, d / R.dm)); });
+      sl.addChart(pptx.ChartType.line, [{ name: 'Devengado del mes', labels: labs, values: tot }, { name: 'Esperado según ritmo', labels: labs, values: esp }, { name: 'Programado del mes', labels: labs, values: labs.map(() => Math.round(T.prog)) }],
+        { x: 0.5, y: 1.15, w: 12.3, h: 5.7, chartColors: [NAVY, GOLD, RED], lineSize: 3, lineDataSymbolSize: 8, showLegend: true, legendPos: 'b', legendFontSize: 12,
+          catAxisLabelFontSize: 12, valAxisLabelFontSize: 10, valAxisLabelFormatCode: '#,##0', showValue: false }); }
+    // 4–6. Alertas del nivel elegido
+    const det = (al, t, sub) => { const sl = pptx.addSlide(); base(sl, t, sub); const f = F.filter(x => al.includes(x.al));
+      if (!f.length) return vacio(sl, 'Sin casos.');
+      tabla(sl, [nvSel, 'Unidad', `Programado ${MES[R.M]}`, `Dev. al ${corteTxt(A.b).slice(0, 5) || '—'}`, `Dev. al ${corteTxt(A.a).slice(0, 5)}`, 'Avance', '% prog.'],
+        f.map(x => [corto(x.et + (x.sub && A.nivel !== 'pp' ? ' — ' + x.sub : ''), 80), corto(x.uo, 14), fmtS(x.prog), R.cB ? fmtS(x.devB) : '—', fmtS(x.devA), R.cB ? (x.av > .5 ? '+' : '') + fmtS(x.av) : '—', pctS(x.pct)]),
+        [5.6, 1.1, 1.3, 1.1, 1.1, 1.13, 1.0], (k, j) => j === 6 || j === 5 ? col(f[k].al) : null, 2); };
+    det(['SIN AVANCE'], `Sin avance desde el ${corteTxt(A.b) || 'cierre anterior'}`, `${nvSel}s con programación en ${mes} cuyo devengado no cambió entre cierres`);
+    det(['LENTO'], 'Avance lento', `${nvSel}s más de 25 puntos por debajo del ritmo esperado (${Math.round(R.ritmo * 100)}%)`);
+    det(['RETROCESO', 'SIN PROGRAMAR'], 'Retrocesos y devengado sin programar', 'Devengado que bajó entre cierres, o devengado en el mes sin programación del área');
+    // 7. Evolución por proyecto
+    { const sl = pptx.addSlide(); base(sl, `Evolución por proyecto en ${mes}`, 'Devengado del mes en cada cierre del SIAF y % de lo programado al último cierre');
+      const f = RP ? RP.filas.slice().sort((a, b) => b.prog - a.prog) : [];
+      if (!f.length) vacio(sl, 'Sin datos.');
+      else { const n = R.delMes.length, w = Math.max(0.9, 5.2 / Math.max(1, n));
+        tabla(sl, ['Proyecto', `Programado ${MES[R.M]}`].concat(R.delMes.map(x => corteTxt(x.corte).slice(0, 5))).concat(['% prog.', 'Alerta']),
+          f.map(x => [corto(x.et, 60), fmtS(x.prog)].concat(x.evo.map(fmtS)).concat([pctS(x.pct), ALERTA[x.al].n])),
+          [12.33 - 1.3 - n * w - 1.0 - 1.6, 1.3].concat(R.delMes.map(() => w)).concat([1.0, 1.6]), (k, j) => j >= n + 2 ? col(f[k].al) : null, 1); } }
+    const blob = await pptx.write({ outputType: 'blob' });
+    bajarArchivo(blob, `Alertas_avance_${corteTxt(A.a).slice(0, 10)}.pptx`);
+    toast('PowerPoint de alertas generado.');
+  } catch (e) { toast((e && e.message) || 'No se pudo generar el PowerPoint.'); }
+  finally { busy(false); }
+}
+
 async function descargarExcel(){
   const D = S.cons.data, filas = consFiltradas().slice().sort((a, b) => a.sf - b.sf || clCod(a.cl).localeCompare(clCod(b.cl)) || String(a.fu).localeCompare(String(b.fu)));
   if (!filas.length){ toast('No hay clasificadores con esos filtros.'); return; }
@@ -1879,7 +2205,7 @@ function iniciarDemo(){
   if (+String(cfg.fechaCorte || '').slice(5, 7) === 12) cfg.fut = { anio: String(+cfg.anio + 1), trim: 'I', periodo: (+cfg.anio + 1) + '-T1', meses: ['Ene', 'Feb', 'Mar'] };
   const base = cfg.soloInv ? D.base.filter(b => b.ti === 'Inversiones' && (b.pim > 0 || b.dva > 0 || (b.mef && b.mef.some(Boolean)))) : D.base;
   base.forEach(b => { b.dsc = E12(); b.sd = 0; });
-  const envios = [], detalle = {}, vig = {};
+  const envios = [], detalle = {}, vig = {}, hist = [];
   const sesiones = {};
   const uni = (() => { const u = {}; base.forEach(b => { if (!u[b.uo]) u[b.uo] = {og:b.og, uo:b.uo, lineas:0, pim:0, se:{}}; u[b.uo].lineas++; u[b.uo].pim += b.pim; u[b.uo].se[b.se] = (u[b.uo].se[b.se]||0)+1; });
     return Object.keys(u).sort().map(k => { const x = u[k]; return {og:x.og, uo:x.uo, lineas:x.lineas, pim:Math.round(x.pim), sectorista:Object.keys(x.se).sort((a,b)=>x.se[b]-x.se[a])[0]}; }); })();
@@ -1982,8 +2308,20 @@ function iniciarDemo(){
       if (!e){ e = { id:'E' + Date.now().toString().slice(-10) + '-' + uo.replace(/\W/g,''), proceso:cfg.proceso, og:(uni.find(x=>x.uo===uo)||{}).og, uo, creado:hoy(), revisor:'', fechaRev:'', comentario:'' }; envios.push(e); }
       Object.assign(e, { estado: enviar ? 'ENVIADO' : 'BORRADOR', usuario: s.usuario, enviado: enviar ? hoy() : '', just: jg, lineas: limpios.length, variacion });
       detalle[e.id] = limpios;
+      { const mod = {}; limpios.forEach(c => mod[c.id] = c); const ahora = new Date();
+        const lin = Object.values(ls).map(L => { const c = mod[L.id]; return { id: L.id, pp: L.pp, fi: L.fi, sf: L.sf, cl: L.cl, fu: L.fu, c2: L.c2, pim: L.pim,
+          m: MES.map((_, i) => i < ini ? L.dv[i] : (c ? c.m[i] : L.po[i])), d: MES.map((_, i) => (c ? c.d[i] : (L.dsc || [])[i]) || ''), mef: L.mef || null,
+          sd: c ? +c.sd || 0 : +L.sd || 0, just: c ? c.just || '' : '', mod: !!c, f: c && c.f ? c.f : (L.f || Z3()), fd: c && c.fd ? c.fd : (L.fd || E3()), fp: cfg.fut ? cfg.fut.periodo : '' }; });
+        hist.push({ snap: 'S' + ahora.getTime(), fechaD: ahora, fecha: hoy(), accion: enviar ? 'ENVIADO' : 'BORRADOR', usuario: s.usuario, envio: e.id, uo, og: e.og, mesIni: ini + 1, just: jg, lineas: lin }); }
       return MOCK.api_cargarUO(t, uo);
     },
+    api_historial(t, corte, uoF){
+      ses(t); const m = String(corte || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); const hasta = m ? new Date(+m[1], +m[2] - 1, +m[3], 23, 59, 59) : new Date();
+      return { corte, anio: cfg.anio, fut: cfg.fut || null, unidades: uni.filter(u => !uoF || u.uo === uoF).map(u => { const l = hist.filter(F => F.uo === u.uo && F.fechaD <= hasta); const ult = l[l.length - 1];
+        return { uo: u.uo, og: u.og, fotos: l.map(F => ({ snap: F.snap, fecha: F.fecha, accion: F.accion, usuario: F.usuario, envio: F.envio, modificadas: F.lineas.filter(x => x.mod).length })).reverse(),
+          ultima: ult ? JSON.parse(JSON.stringify(ult)) : null }; }) };
+    },
+    api_fotoHistorial(t, snap){ ses(t); const F = hist.find(x => x.snap === snap); if (!F) throw new Error('No existe ese registro del historial.'); return JSON.parse(JSON.stringify(F)); },
     api_resumenOPP(t){
       ses(t);
       return { unidades: uni.map(u => { const l = envios.filter(e => e.uo === u.uo && e.proceso === cfg.proceso).pop(); return Object.assign({}, u, { estado: l ? l.estado : 'SIN INICIAR', envio: l || null }); }), envios: envios.slice().reverse() };
@@ -2001,11 +2339,22 @@ function iniciarDemo(){
         const e = envios.filter(x => x.uo === u.uo && x.proceso === cfg.proceso && ['BORRADOR','OBSERVADO','ENVIADO'].includes(x.estado)).pop();
         const pend = {}; if (e) (detalle[e.id] || []).forEach(d => { pend[d.id] = d; if (!porId[d.id]){ const ref = base.find(b => b.uo === u.uo && b.sf == d.sf); if (ref){ const N = nueva(ref, d.cl, d.fu); porId[N.id] = N; ls.push(N); } } });
         ls.forEach(L => { const p = pend[L.id];
-          filas.push({ og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', pp:L.pp || '', pia:L.pia || 0, mef:L.mef || null, dv:L.dv, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
+          filas.push({ id:L.id, pv:L.po.slice(), og:L.og, uo:L.uo, sf:L.sf, fi:L.fi, cl:L.cl, fu:L.fu, c2:L.c2, ti:L.ti || '', pp:L.pp || '', pia:L.pia || 0, mef:L.mef || null, dv:L.dv, pim:L.pim, ej:L.dv.slice(0, ini).reduce((a, b) => a + b, 0),
             v: MES.map((_, i) => i < ini ? L.dv[i] : L.po[i]), sd:+L.sd || 0, ap:L.vigenteDe ? 1 : 0, nv:L.nueva ? 1 : 0,
             p: p ? p.m : null, psd: p ? (+p.sd || 0) : null, pe: p ? e.estado : '', fv: L.f || Z3(), pf: p ? (p.f || Z3()) : null }); });
       });
       return { ini, anio:cfg.anio, proceso:cfg.proceso, corte:cfg.fechaCorte, fut: cfg.fut || null, filas };
+    },
+    api_cortes(t){
+      // Demo: cuatro cierres semanales del mes del último corte; algunas líneas se quedan sin avance para mostrar las alertas
+      ses(t); const M = +String(cfg.fechaCorte).slice(5, 7) - 1, y = cfg.anio, mm = String(M + 1).padStart(2, '0');
+      const dias = ['07', '14', '21', '28'], esc4 = [[.15, .4, .7, 1], [.15, .4, .7, 1], [0, 0, 0, 0], [.3, .3, .3, .3], [.2, .5, .5, .5], [.1, .45, .8, 1]];
+      const lineas = {}; base.forEach(b => lineas[b.id] = { uo: b.uo, og: b.og, pp: b.pp || '', fi: b.fi, sf: b.sf, c2: b.c2, cl: b.cl, fu: b.fu, pim: b.pim });
+      const cortes = dias.map((d, k) => { const D = {};
+        base.forEach((b, i) => { const f = esc4[i % esc4.length][k], dv = b.dv.map((v, j) => j < M ? v : j === M ? Math.round(v * f * 100) / 100 : 0);
+          D[b.id] = [dv.reduce((a, c) => a + c, 0), b.ce || 0].concat(dv); });
+        return { corte: `${y}-${mm}-${d} 09:30`, d: D }; });
+      return { anio: y, lineas, cortes };
     },
     api_notasUO(t, uo){ ses(t); return { notas: JSON.parse(JSON.stringify(notas.filter(n => n.uo === uo).slice().reverse())) }; },
     api_resumenNotas(t){ ses(t); return { notas: JSON.parse(JSON.stringify(notas.slice().reverse())) }; },
