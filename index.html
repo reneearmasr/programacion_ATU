@@ -185,6 +185,7 @@ table.g td.ref.ej{background:var(--closed);color:var(--muted)}
 td.fcol{background:color-mix(in srgb,#7C3AED 4%,var(--surface))} .fut0{border-left:2px solid #7C3AED !important}
 .kpi.fut{border-left:4px solid #7C3AED}
 .kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)}
+table.g td.av-me,table.g th.av-me{background:color-mix(in srgb,var(--warn) 6%,var(--surface))} table.g td.av-aj,table.g th.av-aj{background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
 .pill.al-bad{background:color-mix(in srgb,var(--bad) 14%,var(--surface));color:var(--bad)} .pill.al-warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));color:var(--warn)} .pill.al-ok{background:color-mix(in srgb,var(--ok) 14%,var(--surface));color:var(--ok)}
 .barra{position:relative;height:8px;background:var(--surface2);border-radius:4px;margin:4px 0 3px;min-width:90px} .barra span{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
 .barra span.ok{background:var(--ok)} .barra span.warn{background:var(--warn)} .barra span.bad{background:var(--bad)} .barra i{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
@@ -1380,13 +1381,29 @@ function pintarOPP(){
   const ses = [...new Set(U.map(u => u.sectorista))].filter(Boolean).sort();
   let body = '';
   if (S.ver === 'avance'){
+    // Mes actual (primer mes editable): meta MEF = programación inicial, incrementos, caídas y programación ajustada que propone el área
+    const M = Math.min(11, (S.config.mesInicio || 1) - 1), MESL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+    if (!S.cons.data && !S.avCarga){ S.avCarga = true;
+      run('api_consolidado').then(d => { S.cons.data = d; }).catch(() => {}).finally(() => { S.avCarga = false; if (S.ver === 'avance') pintarOPP(); }); }
+    const mm = {};
+    if (S.cons.data) S.cons.data.filas.forEach(r => { const x = mm[r.uo] = mm[r.uo] || { me: 0, inc: 0, cai: 0, aj: 0 };
+      const ini = r.mef ? +r.mef[M] || 0 : +(r.pv || r.v)[M] || 0, aj = r.p ? +r.p[M] || 0 : +r.v[M] || 0, d = aj - ini;
+      x.me += ini; x.aj += aj; if (d >= 10) x.inc += d; else if (d <= -10) x.cai -= d; });   // diferencias < S/ 10: redondeo del SIAF
+    const ms = uo => S.cons.data ? (mm[uo] || { me: 0, inc: 0, cai: 0, aj: 0 }) : null;
+    const nd = '<span class="meta">…</span>';
+    const Uv = U.filter(u => !S.opp.se || u.sectorista === S.opp.se);
+    const tot = Uv.reduce((t, u) => { const x = ms(u.uo); if (x){ t.me += x.me; t.inc += x.inc; t.cai += x.cai; t.aj += x.aj; } t.mov += u.envio ? +u.envio.variacion || 0 : 0; t.pim += +u.pim || 0; return t; }, { me: 0, inc: 0, cai: 0, aj: 0, mov: 0, pim: 0 });
     body = `<section class="panel"><div class="tools"><b class="grow">Estado de cada unidad en «${esc(S.config.proceso)}»</b>
       <select class="inp" id="fse"><option value="">Todos los sectoristas</option>${ses.map(s => `<option ${s===S.opp.se?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
-      <div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Unidad</th><th class="l">Órgano</th><th class="l">Sectorista</th><th>Líneas</th><th>PIM</th><th class="l">Estado</th><th class="l">Último movimiento</th><th>Monto movido</th><th></th></tr></thead><tbody>
-      ${U.filter(u => !S.opp.se || u.sectorista === S.opp.se).map(u => `<tr><td class="l"><b>${esc(u.uo)}</b></td><td class="l">${esc(u.og)}</td><td class="l">${esc(u.sectorista)}</td><td class="num">${u.lineas}</td><td class="num">${fmt(u.pim)}</td>
-        <td class="l"><span class="pill st-${u.estado.split(' ')[0]}">${esc(u.estado)}</span></td><td class="l">${u.envio ? esc(u.envio.enviado || u.envio.creado) : '—'}</td><td class="num">${u.envio ? fmt(u.envio.variacion) : '—'}</td>
-        <td><div class="acts">${u.envio && u.envio.estado !== 'BORRADOR' ? `<button class="ico" data-env="${esc(u.envio.id)}">Revisar</button>` : ''}<button class="ico" data-uo="${esc(u.uo)}">Formulario</button></div></td></tr>`).join('')}
-      </tbody></table></div></section>`;
+      <div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Unidad</th><th class="l">Órgano</th><th class="l">Sectorista</th><th>Líneas</th><th>PIM</th><th class="l">Estado</th><th class="l">Último movimiento</th><th class="av-me">${MESL[M]} MEF<br><span class="thn">programación inicial</span></th><th class="av-me">Incrementos<br><span class="thn">${MES[M]}</span></th><th class="av-me">Caídas<br><span class="thn">${MES[M]}</span></th><th>Monto movido</th><th class="av-aj">Programación ajustada<br><span class="thn">${MES[M]} · propuesta del área</span></th><th></th></tr></thead><tbody>
+      ${Uv.map(u => { const x = ms(u.uo); return `<tr><td class="l"><b>${esc(u.uo)}</b></td><td class="l">${esc(u.og)}</td><td class="l">${esc(u.sectorista)}</td><td class="num">${u.lineas}</td><td class="num">${fmt(u.pim)}</td>
+        <td class="l"><span class="pill st-${u.estado.split(' ')[0]}">${esc(u.estado)}</span></td><td class="l">${u.envio ? esc(u.envio.enviado || u.envio.creado) : '—'}</td><td class="num av-me">${x ? fmt(x.me) : nd}</td><td class="num av-me diff-up">${x ? (x.inc > .5 ? '+' + fmt(x.inc) : '0') : nd}</td><td class="num av-me diff-dn">${x ? (x.cai > .5 ? '−' + fmt(x.cai) : '0') : nd}</td>
+        <td class="num">${u.envio ? fmt(u.envio.variacion) : '—'}</td><td class="num av-aj"><b>${x ? fmt(x.aj) : nd}</b></td>
+        <td><div class="acts">${u.envio && u.envio.estado !== 'BORRADOR' ? `<button class="ico" data-env="${esc(u.envio.id)}">Revisar</button>` : ''}<button class="ico" data-uo="${esc(u.uo)}">Formulario</button></div></td></tr>`; }).join('')}
+      </tbody><tfoot><tr><td class="l" colspan="4"><b>Total (${Uv.length} unidades)</b></td><td class="num">${fmt(tot.pim)}</td><td></td><td></td>
+        <td class="num av-me">${S.cons.data ? fmt(tot.me) : nd}</td><td class="num av-me diff-up">${S.cons.data ? '+' + fmt(tot.inc) : nd}</td><td class="num av-me diff-dn">${S.cons.data ? '−' + fmt(tot.cai) : nd}</td>
+        <td class="num">${fmt(tot.mov)}</td><td class="num av-aj"><b>${S.cons.data ? fmt(tot.aj) : nd}</b></td><td></td></tr></tfoot></table></div>
+      <p class="meta" style="margin:10px 14px 12px"><b>${MESL[M]} MEF</b>: programación inicial del mes (meta MEF, antes de la propuesta del área). <b>Programación ajustada</b>: la que propone el área (pedido en borrador, enviado u observado) o, si no tiene pedido en curso, la vigente aprobada. Ajustada = MEF + incrementos − caídas (no se cuentan diferencias menores a S/ 10 por clasificador, que son redondeos del SIAF).</p></section>`;
   } else {
     const lista = E.filter(e => (!S.opp.estado || e.estado === S.opp.estado) && e.estado !== 'BORRADOR' && (!S.opp.se || (U.find(u => u.uo === e.uo) || {}).sectorista === S.opp.se));
     body = `<div class="split">
