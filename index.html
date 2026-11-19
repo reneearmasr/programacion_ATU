@@ -637,6 +637,9 @@ function fnv(s){ let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.
 const idNueva = (sf, cl, fu) => 'N' + fnv([sf, String(cl).split('-')[0], fu].join('|'));
 function cerrado(L, i){ return S.config.tipo === 'REPROGRAMACION' ? L.dv[i] : L.po[i]; }
 function ejecutado(L){ const ini = INI(); return ini > 0 ? MES.slice(0, ini).reduce((a, _, i) => a + cerrado(L, i), 0) : (+L.dva || 0); }
+/** Monto ya usado del PIM: meses cerrados = lo ejecutado; meses abiertos = el mayor entre lo programado y lo ya devengado en ese mes
+    (así el saldo por programar nunca cuenta como disponible algo que ya se devengó) */
+function usadoPIM(m, dv, ini){ let t = 0; for (let i = 0; i < 12; i++) t += i < ini ? (+m[i] || 0) : Math.max(+m[i] || 0, dv ? +dv[i] || 0 : 0); return t; }
 function propuesta(L){
   const e = S.edits[L.id], ini = INI();
   return MES.map((_, i) => i < ini ? cerrado(L, i) : (e ? e.m[i] : L.po[i]));
@@ -804,7 +807,7 @@ function descargarExcelUO(){
       .concat([].concat(...MES.map((m, i) => i).filter(i => i >= ini).map(i => { const me = L.mef ? +L.mef[i] || 0 : '', x = me === '' ? 0 : p[i] - me;
         return [me === '' ? '' : rx(me), rx(L.po[i]), rx(p[i]), me === '' || x < 10 ? (me === '' ? '' : 0) : rx(x), me === '' || x > -10 ? (me === '' ? '' : 0) : rx(-x), String(d[i] || '')]; })))
       .concat(F ? [].concat(...[0, 1, 2].map(k => [rx(futVal(L)[k]), String(futDsc(L)[k] || '')])) : [])
-      .concat([rx(tot), rx(L.pim - tot), rx(sdVal(L)), modificada(L) ? 'SI' : '', String(e.just || '')]);
+      .concat([rx(tot), rx(L.pim - usadoPIM(p, L.dv, ini)), rx(sdVal(L)), modificada(L) ? 'SI' : '', String(e.just || '')]);
   });
   const sum = c => filas.reduce((a, f) => a + (typeof f[c] === 'number' ? f[c] : 0), 0);
   const total = cab.map((h, c) => c === 0 ? 'TOTAL ' + S.uo : (c >= 6 && filas.some(f => typeof f[c] === 'number') && !/detalle|corresponde/i.test(h) ? rx(sum(c)) : ''));
@@ -1041,7 +1044,7 @@ function accionFila(id, a){
 
 function pintarFila(L){
   const tr = document.querySelector(`#tw tr[data-id="${L.id}"]`); if (!tr) return;
-  const p = propuesta(L), tot = p.reduce((a,b)=>a+b,0), sal = L.pim - tot;
+  const p = propuesta(L), tot = p.reduce((a,b)=>a+b,0), sal = L.pim - usadoPIM(p, L.dv, INI());
   tr.querySelector('.tot').textContent = fmt(tot);
   const s = tr.querySelector('.sal');
   s.textContent = fmt(sal);
@@ -1065,10 +1068,11 @@ function pintarGrupo(sf){
   if (ini > 0){ if (ver) for (let i = 0; i < ini; i++) set('c'+i, sum(p => p[i])); else set('c', sum(p => p.slice(0,ini).reduce((a,b)=>a+b,0))); }
   for (let i = ini; i < 12; i++) set('m'+i, sum(p => p[i]));
   const t = sum(p => p.reduce((a,b)=>a+b,0)), pim = sum((p, L) => L.pim);
-  set('t', t); set('s', pim - t); set('sd', sum((p, L) => sdVal(L)));
+  const u = sum((p, L) => usadoPIM(p, L.dv, ini));
+  set('t', t); set('s', pim - u); set('sd', sum((p, L) => sdVal(L)));
   if (FUT()) for (let k = 0; k < 3; k++) set('f' + k, Ls.reduce((a, L) => a + futVal(L)[k], 0));
   const s = tr.querySelector('[data-k="s"]');
-  s.className = 'num ' + (pim - t < -1 ? 'neg' : pim - t > 1 ? 'pos' : 'zero');
+  s.className = 'num ' + (pim - u < -1 ? 'neg' : pim - u > 1 ? 'pos' : 'zero');
   s.title = pim - t < -1 ? 'La programación de la meta supera su PIM: no se podrá enviar' : '';
 }
 
@@ -1079,23 +1083,23 @@ function pintarPie(vis){
   set('tfPim', sum(L => L.pim));
   if (ini > 0){ if (ver) for (let i = 0; i < ini; i++) set('tfC'+i, sum(L => propuesta(L)[i])); else set('tfC', sum(L => propuesta(L).slice(0,ini).reduce((a,b)=>a+b,0))); }
   for (let i = ini; i < 12; i++) set('tfM'+i, sum(L => propuesta(L)[i]));
-  const t = sum(L => propuesta(L).reduce((a,b)=>a+b,0)); set('tfT', t); set('tfS', sum(L => L.pim) - t);
+  const t = sum(L => propuesta(L).reduce((a,b)=>a+b,0)); set('tfT', t); set('tfS', sum(L => L.pim) - sum(L => usadoPIM(propuesta(L), L.dv, ini)));
   set('tfSD', sum(sdVal));
   if (FUT()) for (let k = 0; k < 3; k++) set('tfF' + k, sum(L => futVal(L)[k]));
 }
 
 function pintarKPIs(){
   const ini = INI();
-  let pim=0, dva=0, vig=0, prop=0, mods=0, nuevos=0, mov=0, comp=0, sd=0;
+  let pim=0, dva=0, vig=0, prop=0, mods=0, nuevos=0, mov=0, comp=0, sd=0, uso=0;
   S.lineas.forEach(L => {
     const p = propuesta(L); const t = p.reduce((a,b)=>a+b,0);
-    pim += L.pim; dva += L.dva; prop += t; comp += L.co; sd += sdVal(L);
+    pim += L.pim; dva += L.dva; prop += t; comp += L.co; sd += sdVal(L); uso += usadoPIM(p, L.dv, ini);
     vig += L.po.reduce((a,b)=>a+b,0);
     if (modificada(L)){ mods++; if (L.nueva) nuevos++; for (let i = ini; i < 12; i++) mov += Math.abs(p[i] - L.po[i]); }
   });
   const gs = grupos(S.lineas); let sobre = 0;
   gs.forEach(g => { const t = totSf(g.sf); if (t.prog - t.pim > 1) sobre++; });
-  const sal = pim - prop;
+  const sal = pim - uso;
   $('#kpis').innerHTML = `
     <div class="kpi"><small>PIM</small><b>${fmtM(pim)}</b><i>${gs.length} SEC_FUNC · ${S.lineas.length} clasificadores</i></div>
     <div class="kpi"><small>Devengado acumulado</small><b>${fmtM(dva)}</b><i>${pim ? (dva/pim*100).toFixed(1) : 0}% del PIM</i></div>
@@ -1568,7 +1572,7 @@ function pintarOPP(){
     const hayF = FIL.some(f => A[f.k]);
     const mm = {};
     filtradas().forEach(r => { const x = mm[r.uo] = mm[r.uo] || { pim: 0, dv: 0, me: 0, inc: 0, cai: 0, aj: 0, sd: 0, pp: 0 };
-      x.pp += (+r.pim || 0) - MES.reduce((a, _, i) => a + (i < ini ? +r.v[i] || 0 : r.p ? +r.p[i] || 0 : +r.v[i] || 0), 0);   // PIM por programar = PIM − (ejecutado de meses cerrados + programado)
+      x.pp += (+r.pim || 0) - usadoPIM(r.p || r.v, r.dv, ini);   // PIM por programar = PIM − (ejecutado de meses cerrados + mayor entre programado y devengado en los abiertos)
       x.dv += (r.dv || []).reduce((a, b) => a + (+b || 0), 0);
       x.sd += r.p ? +r.psd || 0 : +r.sd || 0;
       const base = r.mef ? +r.mef[M] || 0 : +(r.pv || r.v)[M] || 0;
@@ -1585,7 +1589,7 @@ function pintarOPP(){
         <label class="f">Mes<select class="inp" id="avMes">${MESL.map((m, k) => `<option value="${k}" ${k === M ? 'selected' : ''}>${m}${k === ini ? ' (mes actual)' : ''}</option>`).join('')}</select></label>
         ${hayF ? '<div class="cons-x"><button class="ico" id="avLimpiar">Limpiar filtros</button></div>' : ''}
       </div>
-      <div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Órgano</th><th class="l">Unidad orgánica</th><th>PIM</th><th title="Devengado acumulado a la fecha de corte del SIAF">Devengado</th><th class="l">Estado</th><th class="l">Último movimiento</th><th class="av-me">${MESL[M]} MEF<br><span class="thn">programación inicial</span></th><th class="av-me">Incrementos<br><span class="thn">${MES[M]}</span></th><th class="av-me">Caídas<br><span class="thn">${MES[M]}</span></th><th>Monto movido</th><th class="av-aj">Programación ajustada<br><span class="thn">${MES[M]} · ${etqM}</span></th><th title="PIM − (ejecutado de los meses cerrados + programado de los meses abiertos), con la propuesta del área">PIM por<br><span class="thn">programar</span></th><th class="sd-h">Saldos<br><span class="thn">declarados al cierre</span></th><th></th></tr></thead><tbody>
+      <div class="tbl-wrap"><table class="g"><thead><tr><th class="l">Órgano</th><th class="l">Unidad orgánica</th><th>PIM</th><th title="Devengado acumulado a la fecha de corte del SIAF">Devengado</th><th class="l">Estado</th><th class="l">Último movimiento</th><th class="av-me">${MESL[M]} MEF<br><span class="thn">programación inicial</span></th><th class="av-me">Incrementos<br><span class="thn">${MES[M]}</span></th><th class="av-me">Caídas<br><span class="thn">${MES[M]}</span></th><th>Monto movido</th><th class="av-aj">Programación ajustada<br><span class="thn">${MES[M]} · ${etqM}</span></th><th title="PIM − (ejecutado de los meses cerrados + en los meses abiertos, el mayor entre lo programado por el área y lo ya devengado)">PIM por<br><span class="thn">programar</span></th><th class="sd-h">Saldos<br><span class="thn">declarados al cierre</span></th><th></th></tr></thead><tbody>
       ${Uv.map(u => { const x = ms(u.uo); return `<tr><td class="l">${esc(u.og)}</td><td class="l"><b>${esc(u.uo)}</b></td><td class="num">${fmt(x ? x.pim : u.pim)}</td><td class="num">${x ? fmt(x.dv) : nd}</td>
         <td class="l"><span class="pill st-${u.estado.split(' ')[0]}">${esc(etqEstado(u.estado))}</span></td><td class="l">${u.envio ? esc(u.envio.enviado || u.envio.creado) : '—'}</td><td class="num av-me">${x ? fmt(x.me) : nd}</td><td class="num av-me diff-up">${x ? (x.inc > .5 ? '+' + fmt(x.inc) : '0') : nd}</td><td class="num av-me diff-dn">${x ? (x.cai > .5 ? '−' + fmt(x.cai) : '0') : nd}</td>
         <td class="num">${u.envio ? fmt(u.envio.variacion) : '—'}</td><td class="num av-aj"><b>${x ? fmt(x.aj) : nd}</b></td><td class="num ${x && x.pp < -1 ? 'neg' : x && x.pp > 1 ? 'pos' : ''}">${x ? fmt(x.pp) : nd}</td><td class="num sdc">${x ? fmt(x.sd) : nd}</td>
@@ -1594,7 +1598,7 @@ function pintarOPP(){
       </tbody><tfoot><tr><td class="l" colspan="2"><b>Total (${Uv.length} unidades)</b></td><td class="num">${fmt(tot.pim)}</td><td class="num">${S.cons.data ? fmt(tot.dv) : nd}</td><td></td><td></td>
         <td class="num av-me">${S.cons.data ? fmt(tot.me) : nd}</td><td class="num av-me diff-up">${S.cons.data ? (tot.inc > .5 ? '+' + fmt(tot.inc) : '0') : nd}</td><td class="num av-me diff-dn">${S.cons.data ? (tot.cai > .5 ? '−' + fmt(tot.cai) : '0') : nd}</td>
         <td class="num">${fmt(tot.mov)}</td><td class="num av-aj"><b>${S.cons.data ? fmt(tot.aj) : nd}</b></td><td class="num">${S.cons.data ? fmt(tot.pp) : nd}</td><td class="num sdc">${S.cons.data ? fmt(tot.sd) : nd}</td><td></td></tr></tfoot></table></div>
-      <p class="meta" style="margin:10px 14px 12px"><b>${MESL[M]} MEF</b>: programación inicial del mes (meta MEF, antes de la propuesta del área). <b>Programación ajustada</b>: ${M < ini ? 'en un mes ya cerrado, la programación vigente aprobada' : 'la que propone el área (pedido en borrador, enviado u observado) o, si no tiene pedido en curso, la vigente aprobada'}. Ajustada = MEF + incrementos − caídas (no se cuentan diferencias menores a S/ 10 por clasificador, que son redondeos del SIAF). PIM y montos consideran solo los clasificadores que cumplen los filtros; «Monto movido» es el total del pedido de la unidad. <b>Devengado</b>: acumulado de enero a la fecha de corte del SIAF (${esc(S.config.fechaCorte)}). <b>PIM por programar</b>: PIM − (ejecutado de los meses cerrados + programado de los meses abiertos con la propuesta del área); en rojo si la programación supera el PIM. <b>Saldos</b>: monto del PIM que el área declara que no ejecutará al cierre del año (propuesta en curso o, si no tiene, el vigente).</p></section>`;
+      <p class="meta" style="margin:10px 14px 12px"><b>${MESL[M]} MEF</b>: programación inicial del mes (meta MEF, antes de la propuesta del área). <b>Programación ajustada</b>: ${M < ini ? 'en un mes ya cerrado, la programación vigente aprobada' : 'la que propone el área (pedido en borrador, enviado u observado) o, si no tiene pedido en curso, la vigente aprobada'}. Ajustada = MEF + incrementos − caídas (no se cuentan diferencias menores a S/ 10 por clasificador, que son redondeos del SIAF). PIM y montos consideran solo los clasificadores que cumplen los filtros; «Monto movido» es el total del pedido de la unidad. <b>Devengado</b>: acumulado de enero a la fecha de corte del SIAF (${esc(S.config.fechaCorte)}). <b>PIM por programar</b>: PIM − (ejecutado de los meses cerrados + en los meses abiertos, el mayor entre lo programado por el área y lo ya devengado); en rojo si la programación supera el PIM. <b>Saldos</b>: monto del PIM que el área declara que no ejecutará al cierre del año (propuesta en curso o, si no tiene, el vigente).</p></section>`;
   } else {
     const lista = E.filter(e => (!S.opp.estado || e.estado === S.opp.estado) && e.estado !== 'BORRADOR' && (!S.opp.se || (U.find(u => u.uo === e.uo) || {}).sectorista === S.opp.se));
     body = `<div class="split">
@@ -1656,7 +1660,7 @@ function detalleEnvio(){
       tPim += +L.pim || 0; tEj += ej; tSdV += sdV; tSdP += sdP;
       for (let i = ini; i < 12; i++){ const x = p[i] - v[i]; tv += v[i]; tp += p[i]; if (x > 0) sube += x; else baja -= x; }
       const tt = p.reduce((a,b)=>a+b,0), tVig = MES.reduce((a,_,i)=>a+(i<ini?cerrado(L,i):v[i]),0);
-      const sinV = (+L.pim || 0) - tVig, sinP = (+L.pim || 0) - tt; tSinV += sinV; tSinP += sinP;
+      const sinV = (+L.pim || 0) - usadoPIM(MES.map((_, i) => i < ini ? cerrado(L, i) : v[i]), L.dv, ini), sinP = (+L.pim || 0) - usadoPIM(p, L.dv, ini); tSinV += sinV; tSinP += sinP;
       const cSin = x => `num ${x < -1 ? 'neg' : x > 1 ? 'pos' : 'zero'}`;
       rows += `<tr><td class="lin" rowspan="2"><div class="cl">${esc(cod)}${L.pj ? ' · CUI ' + esc(L.pj) : ''}${L.nueva ? ' <span class="chip">NUEVO</span>' : ''}${tieneMef(L) ? ' <span class="chip mef">META MEF</span>' : ''}</div><div class="ln">${esc(cap(nm.join('-')))}</div><div class="meta">${esc(abrev(L.fu))}${L.nueva ? ' · requiere modificación presupuestal' : ''}</div>
           ${L.just ? `<div class="meta" style="color:var(--ink);margin-top:6px"><b>Justificación:</b> ${esc(L.just)}</div>` : ''}</td>
@@ -1685,7 +1689,7 @@ function detalleEnvio(){
     </div>
     <div class="banner info" style="color:var(--ink)"><b style="color:var(--accent)">Justificación general</b><p>${esc(e.just || '—')}</p></div>
     ${e.comentario ? `<div class="banner ${e.estado==='APROBADO'?'ok':'bad'}"><b>Revisión OPP (${esc(e.revisor)}, ${esc(e.fechaRev)})</b><p>${esc(e.comentario)}</p></div>` : ''}
-    <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}${F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">${F.trim} trim. · monto y detalle</span></th>`).join('') : ''}<th>Anual ${esc(S.config.anio)}<br><span class="thn">ejec. + prog.</span></th><th title="PIM − (ejecutado + programado)">Saldo sin<br>programar</th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}${F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">${F.trim} trim. · monto y detalle</span></th>`).join('') : ''}<th>Anual ${esc(S.config.anio)}<br><span class="thn">ejec. + prog.</span></th><th title="PIM − (ejecutado + en los meses abiertos, el mayor entre lo programado y lo ya devengado)">Saldo sin<br>programar</th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${puede ? `<div class="decide"><label class="f" for="com">Comentario para el área (obligatorio si observas)<textarea id="com" placeholder="Ej.: sustentar el adelanto de diciembre con el cronograma del contrato"></textarea></label>
       <div class="row"><button class="btn ok" id="bAprobar">Aprobar y actualizar programación vigente</button><button class="btn bad" id="bObservar">Observar y devolver</button></div></div>` : ''}
   </div>`;
