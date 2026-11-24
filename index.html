@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230B2A4A'/%3E%3Cpath d='M7 18V11M12 18V6M17 18v-5' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
-<script>window.API_URL = "https://script.google.com/macros/s/AKfycbx3eLvFWDK4exL8VK8PkChSjzyitK3HBNpUtq2oOROc-HaHdMHtn9YBjIBIi-z3ro4r/exec";</script>
+<script>window.API_URL = "https://gqjhayjilmyqwavmwztg.supabase.co/functions/v1/inversiones-api";</script>
 <title>Programación y Modificación de Inversiones · ATU</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -437,8 +437,8 @@ tfoot td,tfoot td.lin{background:var(--surface2)}
 <script>
 /* ===================== Conexión con el servidor ===================== */
 const MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-const GAS = typeof google !== 'undefined' && google.script && google.script.run;
-const API = !GAS && typeof window.API_URL === 'string' && /^https:\/\/script\.google\.com\//.test(window.API_URL) ? window.API_URL : '';
+const GAS = typeof google !== 'undefined' && google.script && google.script.run && !window.FORZAR_API;
+const API = !GAS && typeof window.API_URL === 'string' && /^https:\/\/(script\.google\.com\/|[a-z0-9]+\.supabase\.co\/functions\/v1\/)/.test(window.API_URL) ? window.API_URL : '';
 const REAL = GAS || !!API;
 // Lecturas que se pueden repetir sin riesgo si Google falla un momento
 const REINTENTABLES = ['api_ccp','api_ping','api_ingreso','api_entrar','api_contexto','api_historial','api_fotoHistorial','api_cortes','api_login','api_cargarUO','api_resumenOPP','api_verEnvio','api_consolidado','api_notasUO','api_resumenNotas'];
@@ -447,7 +447,7 @@ async function llamarAPI(fn, args){
   const intentos = REINTENTABLES.includes(fn) ? 4 : 1;
   let ultimo = null;
   for (let k = 0; k < intentos; k++){
-    if (k){ if (fn !== 'api_ping') toast('Google tardó en responder; reintentando (' + (k + 1) + ' de ' + intentos + ')…'); await espera([0, 1500, 3500, 7000][k]); }
+    if (k){ if (fn !== 'api_ping') toast('El servidor tardó en responder; reintentando (' + (k + 1) + ' de ' + intentos + ')…'); await espera([0, 1500, 3500, 7000][k]); }
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const tmr = ctrl ? setTimeout(() => ctrl.abort(), 60000) : null;
     try {
@@ -456,8 +456,8 @@ async function llamarAPI(fn, args){
       let j = null;
       try { j = JSON.parse(txt); } catch(e){}
       if (!j){   // Google devolvió una página de error en vez de datos
-        ultimo = new Error(r.status === 429 || /too many|demasiad/i.test(txt) ? 'Google recibió demasiadas solicitudes a la vez. Espera unos segundos e inténtalo de nuevo.'
-          : 'El servidor de Google tuvo un error temporal (' + r.status + '). Inténtalo de nuevo en unos segundos.');
+        ultimo = new Error(r.status === 429 || /too many|demasiad/i.test(txt) ? 'El servidor recibió demasiadas solicitudes a la vez. Espera unos segundos e inténtalo de nuevo.'
+          : 'El servidor tuvo un error temporal (' + r.status + '). Inténtalo de nuevo en unos segundos.');
         console.warn('Respuesta no válida de Apps Script', r.status, txt.slice(0, 300));
         continue;
       }
@@ -1610,7 +1610,7 @@ function pintarOPP(){
   $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="counts">${['SIN INICIAR','BORRADOR'].concat(ESTADOS.filter(x => x !== 'BORRADOR')).map(k => `<button class="count" data-est="${k}" aria-pressed="${S.ver==='bandeja' && S.opp.estado===k}"><b>${cnt[k] || 0}</b><span class="pill st-${k.split(' ')[0]}">${etqEstado(k)}</span></button>`).join('')}
     <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">de ${U.length} unidades orgánicas</span>
-    <button class="btn sm btn-ref" id="bRefrescar" title="Volver a leer los pedidos desde el Google Sheet">↻ Actualizar</button></div>
+    <button class="btn sm btn-ref" id="bRefrescar" title="Volver a leer los pedidos desde el servidor">↻ Actualizar</button></div>
     ${body}`;
   bindTabs();
   $('#bRefrescar').onclick = async () => { await abrirOPP(); if (S.opp.sel && S.opp.det){ S.opp.det = null; await verEnvio(S.opp.sel); } toast('Datos actualizados.'); };
@@ -2002,7 +2002,7 @@ function pintarNotasOPP(){
   $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="counts">${['ENVIADO','OBSERVADO','APROBADO'].map(k => `<button class="count" data-nest="${k}" aria-pressed="${S.opp.nest === k}"><b>${cnt[k] || 0}</b><span class="pill st-${k}">${k}</span></button>`).join('')}
       <span class="sub" style="align-self:center;color:var(--muted);font-size:12.5px">notas de modificación presupuestal · ${cnt.BORRADOR || 0} en borrador en las áreas</span>
-      <button class="btn sm btn-ref" id="bRefNotas" title="Volver a leer las notas desde el Google Sheet">↻ Actualizar</button></div>
+      <button class="btn sm btn-ref" id="bRefNotas" title="Volver a leer las notas desde el servidor">↻ Actualizar</button></div>
     <div class="split">
       <section class="panel"><div class="tools"><select class="inp" id="fse" style="flex:1"><option value="">Todos los sectoristas</option>${ses.map(s => `<option ${s === S.opp.se ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
         <div class="list">${lista.length ? lista.map(n => `<button class="item" data-nsel="${esc(n.id)}" aria-current="${n.id === S.opp.nsel}"><b>${esc(n.numero)} <span>· ${esc(n.uo)}</span></b><span class="pill st-${esc(n.estado)}">${esc(n.estado)}</span>
@@ -2159,7 +2159,7 @@ function pintarConsolidado(){
       <td class="num">${fmt(nd.pim)}</td>${tdMef(nd)}</tr>`; };
   $('#app').innerHTML = `${tabsOPP()}${bannerAnio()}
     <div class="head"><div><div class="sub">Año fiscal ${esc(D.anio)} · ${esc(D.proceso)} · base SIAF corte ${esc(D.corte)}</div><h2>Programación consolidada</h2></div>
-      <span class="grow"></span><button class="btn sm" id="bRefCons" title="Volver a leer la programación desde el Google Sheet">↻ Actualizar</button>
+      <span class="grow"></span><button class="btn sm" id="bRefCons" title="Volver a leer la programación desde el servidor">↻ Actualizar</button>
       <button class="btn primary" id="bXls"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Descargar Excel</button></div>
     <section class="panel cons-f">
       <label class="f">Mostrar en la 1.ª columna<select class="inp" id="cGrupo"><option value="arbol" ${g === 'arbol' ? 'selected' : ''}>Proyecto › Componente › Unidad orgánica</option>${DIMS.map(d => `<option value="${d.k}" ${d.k === g ? 'selected' : ''}>${d.n}</option>`).join('')}</select></label>
