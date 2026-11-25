@@ -1651,7 +1651,17 @@ function detalleEnvio(){
   orden.sort((a,b) => a - b).forEach(sf => {
     const R = gs[sf][0];
     rows += `<tr class="sfh"><td class="lin" colspan="${nC}"><div class="sfk">SEC_FUNC ${pad4(sf)}${R.mt != null ? ' · Meta ' + esc(R.mt) : ''}</div><div class="sfn">${esc(cap(sinCod(R.fi)))}</div><div class="meta">${esc(cap(sinCod(R.ao)))}</div></td></tr>`;
-    gs[sf].forEach(L => {
+    // Concepto 1 (y Concepto 2) como subgrupo dentro de la SEC_FUNC, igual que en el formulario del área
+    const cN = L => L.nueva ? 'Clasificadores agregados' : String(L.c2 || 'Sin concepto');
+    const ordC = []; gs[sf].forEach(L => { if (ordC.indexOf(cN(L)) < 0) ordC.push(cN(L)); });
+    let c2Ant = null;
+    gs[sf].slice().sort((a, b) => ordC.indexOf(cN(a)) - ordC.indexOf(cN(b))).forEach(L => {
+      if (cN(L) !== c2Ant) {
+        c2Ant = cN(L);
+        const delC = gs[sf].filter(x => cN(x) === c2Ant), pimC = delC.reduce((a, x) => a + (+x.pim || 0), 0);
+        const c3s = [...new Set(delC.map(x => String(x.c3 || '').trim()).filter(x => x && x !== c2Ant))];
+        rows += `<tr class="c2h"><td class="lin"><div class="c2n">${esc(c2Ant)}</div>${c3s.length ? `<div class="meta">Concepto 2: ${esc(c3s.join(' · '))}</div>` : ''}</td><td class="num">${fmt(pimC)}</td><td colspan="${nC - 2}"></td></tr>`;
+      }
       const v = L.po, p = L.propuesto, d = L.propDsc || E12(), dv = L.dsc || E12();
       const sdV = +L.sd || 0, sdP = +L.propSd || 0, sdX = sdP - sdV;
       const nm = String(L.cl || '').split('-'); const cod = nm.shift();
@@ -1689,7 +1699,7 @@ function detalleEnvio(){
     </div>
     <div class="banner info" style="color:var(--ink)"><b style="color:var(--accent)">Justificación general</b><p>${esc(e.just || '—')}</p></div>
     ${e.comentario ? `<div class="banner ${e.estado==='APROBADO'?'ok':'bad'}"><b>Revisión OPP (${esc(e.revisor)}, ${esc(e.fechaRev)})</b><p>${esc(e.comentario)}</p></div>` : ''}
-    <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC · clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}${F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">${F.trim} trim. · monto y detalle</span></th>`).join('') : ''}<th>Anual ${esc(S.config.anio)}<br><span class="thn">ejec. + prog.</span></th><th title="PIM − (ejecutado + en los meses abiertos, el mayor entre lo programado y lo ya devengado)">Saldo sin<br>programar</th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table class="g"><thead><tr><th class="lin">SEC_FUNC › concepto › clasificador</th><th>PIM</th><th>${ejH}</th><th></th>${MES.slice(ini).map(m => `<th>${m}<br><span class="thn">monto y detalle</span></th>`).join('')}${F ? F.meses.map((m, k) => `<th class="mes-fut ${k ? '' : 'fut0'}">${m} ${F.anio}<br><span class="thn">${F.trim} trim. · monto y detalle</span></th>`).join('') : ''}<th>Anual ${esc(S.config.anio)}<br><span class="thn">ejec. + prog.</span></th><th title="PIM − (ejecutado + en los meses abiertos, el mayor entre lo programado y lo ya devengado)">Saldo sin<br>programar</th><th class="sd-h">Saldo<br>declarado</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${puede ? `<div class="decide"><label class="f" for="com">Comentario para el área (obligatorio si observas)<textarea id="com" placeholder="Ej.: sustentar el adelanto de diciembre con el cronograma del contrato"></textarea></label>
       <div class="row"><button class="btn ok" id="bAprobar">Aprobar y actualizar programación vigente</button><button class="btn bad" id="bObservar">Observar y devolver</button></div></div>` : ''}
   </div>`;
