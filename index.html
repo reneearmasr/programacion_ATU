@@ -838,7 +838,8 @@ async function descargarExcelTodas(){
   const btn = $('#bXlsTodas'); if (btn) { btn.disabled = true; btn.textContent = 'Preparando…'; }
   const guard = { uo: S.uo, lineas: S.lineas, catalogo: S.catalogo, envio: S.envio, historial: S.historial, edits: S.edits, justGeneral: S.justGeneral };
   const rx = v => Math.round((+v || 0) * 100) / 100, ini = INI();
-  let cab = null; const filas = [], resumen = [];
+  const fin = () => { Object.assign(S, guard); if (btn) { btn.disabled = false; btn.textContent = '⭳ Excel de todas las unidades'; } };
+  let cab = null; const filas = [];
   try {
     const uos = (S.unidades || []).slice().sort((a, b) => cmpTxt(a.og, b.og) || cmpTxt(a.uo, b.uo));
     for (let k = 0; k < uos.length; k++) {
@@ -846,31 +847,23 @@ async function descargarExcelTodas(){
       if (btn) btn.textContent = `Preparando ${k + 1}/${uos.length}…`;
       if (u.uo === guard.uo) Object.assign(S, guard);              // la unidad abierta: tal como está en pantalla
       else cargarRespuesta(u.uo, await run('api_cargarUO', u.uo));
-      const t = tablaExcelUO(), est = S.envio ? S.envio.estado : 'SIN INICIAR';
-      if (!cab) cab = ['Órgano', 'Unidad orgánica', 'Estado del pedido', 'N.° de pedido'].concat(t.cab);
-      t.filas.forEach(f => filas.push([u.og || '', u.uo, etqEstado(est), S.envio ? S.envio.id : ''].concat(f)));
-      const c = n => t.cab.indexOf(n), sumC = n => t.filas.reduce((a, f) => a + (+f[c(n)] || 0), 0);
-      resumen.push([u.og || '', u.uo, etqEstado(est), S.envio ? S.envio.id : '', S.envio ? (S.envio.enviado || S.envio.creado || '') : '', t.filas.length,
-        t.filas.filter(f => f[c('Modificado')] === 'SI').length, rx(sumC('PIM')), rx(sumC(t.cab[7])), rx(sumC('Programación anual')),
-        rx(sumC('Saldo PIM sin programar')), rx(sumC('Saldo declarado')), S.justGeneral || '']);
+      const t = tablaExcelUO();
+      if (!cab) cab = ['Órgano', 'Unidad orgánica'].concat(t.cab);
+      t.filas.forEach(f => filas.push([u.og || '', u.uo].concat(f)));
     }
-  } catch (e) { Object.assign(S, guard); if (btn) { btn.disabled = false; btn.textContent = '⭳ Excel de todas las unidades'; } toast('No se pudo preparar el Excel: ' + e.message); return; }
-  Object.assign(S, guard);
-  if (btn) { btn.disabled = false; btn.textContent = '⭳ Excel de todas las unidades'; }
+  } catch (e) { fin(); toast('No se pudo preparar el Excel: ' + e.message); return; }
+  fin();
   const sum = c => filas.reduce((a, f) => a + (typeof f[c] === 'number' ? f[c] : 0), 0);
-  const total = cab.map((h, c) => c === 0 ? 'TOTAL (' + resumen.length + ' unidades)' : (c >= 10 && filas.some(f => typeof f[c] === 'number') && !/detalle|corresponde/i.test(h) ? rx(sum(c)) : ''));
-  const cabR = ['Órgano', 'Unidad orgánica', 'Estado del pedido', 'N.° de pedido', 'Fecha del pedido', 'Clasificadores', 'Modificados', 'PIM', cab[11], 'Programación anual', 'Saldo PIM sin programar', 'Saldo declarado', 'Justificación general'];
-  const sumR = c => resumen.reduce((a, f) => a + (+f[c] || 0), 0);
-  const totR = cabR.map((h, c) => c === 0 ? 'TOTAL' : c >= 5 && c <= 11 ? rx(sumR(c)) : '');
+  const nU = new Set(filas.map(f => f[1])).size;
+  const total = cab.map((h, c) => c === 0 ? 'TOTAL (' + nU + ' unidades)' : (c >= 8 && filas.some(f => typeof f[c] === 'number') && !/detalle|corresponde/i.test(h) ? rx(sum(c)) : ''));
+  const ancho = (h, c) => c === 0 ? 14 : c === 1 ? 13 : c === 2 ? 40 : c === 3 ? 13 : c === 4 ? 16 : c === 5 ? 39 : c === 6 ? 45 : c === 7 ? 22
+    : /corresponde|detalle|Justificación/i.test(h) ? 40 : (h === 'PIM' || / MEF$/.test(h) || h === 'Programación anual') ? 15 : 13;
   const hoy = new Date(), p2 = n => String(n).padStart(2, '0');
   const datos = [['Programación y Modificación de Inversiones · ATU'], [], ['Contenido', 'Programación de todas las unidades orgánicas (vigente aprobada y, si hay pedido en curso, lo propuesto por el área)'],
     ['Año fiscal', S.config.anio], ['Proceso', S.config.proceso], ['Base SIAF (corte)', S.config.fechaCorte], ['Meses editables', `${MES[ini]}–Dic ${S.config.anio}`],
     ['Generado', `${p2(hoy.getDate())}/${p2(hoy.getMonth() + 1)}/${hoy.getFullYear()} ${p2(hoy.getHours())}:${p2(hoy.getMinutes())}`]];
   const blob = crearXlsx([
-    { nombre: 'Resumen por unidad', filas: [cabR].concat(resumen).concat([totR]), cabecera: true, numDesde: 5, numHasta: 12, congelar: { c: 2, r: 1 }, filtro: true,
-      anchos: cabR.map((h, c) => c === 12 ? 60 : c < 2 ? 18 : 16) },
-    { nombre: 'Programación', filas: [cab].concat(filas).concat([total]), cabecera: true, numDesde: 10, numHasta: cab.length, congelar: { c: 9, r: 1 }, filtro: true,
-      anchos: cab.map((h, c) => c < 2 ? 14 : c < 4 ? 18 : c < 6 ? 40 : c === 8 ? 45 : /corresponde|detalle|Justificación/i.test(h) ? 40 : c < 10 ? 16 : 15) },
+    { nombre: 'Programación', filas: [cab].concat(filas).concat([total]), cabecera: true, numDesde: 8, numHasta: cab.length, filtro: true, anchos: cab.map(ancho) },
     { nombre: 'Datos', filas: datos, titulos: [0], anchos: [30, 90] } ]);
   bajarArchivo(blob, `Programacion_todas_las_unidades_${S.config.anio}_${hoy.getFullYear()}-${p2(hoy.getMonth() + 1)}-${p2(hoy.getDate())}.xlsx`);
   toast('Excel de todas las unidades descargado.');
